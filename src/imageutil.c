@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include "nethelper.h"
 #include "imageutil.h"
 
 int main( int argc, char** argv ) 
@@ -255,16 +256,21 @@ void installNetHelper( int controlConnection )
 	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
 	waitForControlConnection( controlConnection, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, commandline );
-	transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, strlen(NETHELPER_DATA), &indata, &inlen ); 
+	transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, NETHELPER_DATA_LEN, &indata, &inlen ); 
 	// We are not interested in the recieved data therefore just free it
+	
+	// DEBUG
 	indata[inlen] = 0;
 	printf(" RECIEVED SERVER DATA \n\n %s\n\nDATA END\n", indata );
+	
 	free( indata );
 	
 	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	sendToControlConnection( controlConnection, "chmod u+x nethelper" );
+	waitForControlConnection( controlConnection, COMMANDPROMPT );
 }
 
-int transferServer( struct in_addr* serverip, uint32_t port, void* out, int outlen, char** in, int* inlen )
+int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen, char** in, int* inlen )
 {
 	int listensock, sock;
 	struct sockaddr_in server;
@@ -305,9 +311,9 @@ int transferServer( struct in_addr* serverip, uint32_t port, void* out, int outl
 	// Send all our given data if any
 	if ( outlen > 0 )
 	{
-		send( sock, out, outlen, 0 );
+		printf("Sent %i bytes\n", send( sock, out, outlen, 0 ) );
 	}
-
+	
 	// Recieve all the given data
 	{	
 		int allocated;
@@ -334,7 +340,7 @@ int transferServer( struct in_addr* serverip, uint32_t port, void* out, int outl
 			*inlen += recieved;
 		}
 	}
-	
+
 	// Cleanup
 	close( sock );
 	close( listensock );

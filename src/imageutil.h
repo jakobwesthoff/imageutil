@@ -8,9 +8,6 @@
 
 #define TRANSFERPORT 12345
 
-#define NETHELPER_DATA "HTTP/1.1 200 OK\nContent-Type: application/octect-stream\nContent-Length: 6\n\nfoobar"
-
-
 int main( int argc, char** argv );
 int readImages( struct in_addr kathreinip, char* targetpath );
 int writeImages( struct in_addr kathreinip, char* targetpath );
@@ -19,5 +16,5 @@ void closeControlConnection( int sock );
 void waitForControlConnection( int sock, char* waitfor );
 void sendToControlConnection( int sock, char* data );
 int getSourceIpFromSocket( int sock, struct in_addr* ipaddr );
-int transferServer( struct in_addr* serverip, uint32_t port, void* out, int outlen, char** in, int* inlen );
+int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen, char** in, int* inlen );
 void installNetHelper( int controlConnection );
