@@ -245,13 +245,15 @@ void installNetHelper( int controlConnection )
 
 	// Create the needed commandline
 	memset( commandline, 0, 1024 );
-	strcat( commandline, "cd /tmp; rm -rf nethelper; sleep 2; wget http://" );
+	strcat( commandline, "sleep 2; wget http://" );
 	strcat( commandline, (char*)inet_ntoa( serverip ) );
 	strcat( commandline, ":" );
 	strcat( commandline, port );
 	strcat( commandline, "/nethelper" );
 
 	// Send the commandline and start the transfer server
+	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
+	waitForControlConnection( controlConnection, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, commandline );
 	transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, strlen(NETHELPER_DATA), &indata, &inlen ); 
 	// We are not interested in the recieved data therefore just free it
