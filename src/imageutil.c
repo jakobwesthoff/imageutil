@@ -14,8 +14,8 @@
 
 int main( int argc, char** argv ) 
 {
-	// Ip addresses
-	struct in_addr serverip, kathreinip;
+	// Ip address
+	struct in_addr kathreinip;
 
 	// targetpath
 	char* targetpath;
@@ -24,51 +24,50 @@ int main( int argc, char** argv )
 	printf( "%s %s\n", PROGRAM_TITLE, PROGRAM_VERSION );
 
 	// Check for correct parameter count
-	if ( argc < 4 ) {
+	if ( argc < 3 ) {
 		// Show usage
-		printf( "Usage: %s ACTION SERVERIP KATHREINIP PATHNAME\n", *argv );
+		printf( "Usage: %s ACTION KATHREINIP PATHNAME\n", *argv );
 		printf( "Read or write images from or to the kathrein ufs-910 reciever\n" );
 		printf( "\n" );
-		printf( "Example: %s r 10.0.1.5 10.0.1.202 target\n", *argv );
+		printf( "Example: %s r 10.0.1.202 target\n", *argv );
 		printf( "  This will read all the images from the box and store them in the target directory\n" );
 		printf( "\n" );
 		printf( "An action needs to be specified. It can be either \"r\" for read or \"w\" for write.\n" );
-		printf( "Serverip specifies the ip addr which this computer can be reached from the kathrein box.\n" );
 		printf( "Kathreinip specifies the ip addr of the kathrein reciever.\n" );
 		printf( "Pathname specifies the directory containing the images to read from or write to.\n" );	
 	}
 
-	if ( inet_aton( argv[2], &serverip ) == 0 )
-	{
-		fprintf( stderr, "The given serverip \"%s\" could not be parsed\n", argv[2] );
-		exit( EXIT_FAILURE );
-	}
-	if ( inet_aton( argv[3], &kathreinip ) == 0 )
+	if ( inet_aton( argv[2], &kathreinip ) == 0 )
 	{
 		fprintf(stderr, "The given kathreinip \"%s\" could not be parsed\n", argv[3] );
 		exit( EXIT_FAILURE );
 	}
 
-	targetpath = argv[4];
+	// @todo: validate the target path and possibly create it
+	targetpath = argv[3];
 
 	if ( !strcasecmp( argv[1], "w" ) ) 
 	{
-		return writeImages( serverip, kathreinip, targetpath );
+		return writeImages( kathreinip, targetpath );
 	}
 	else 
 	{
-		return readImages( serverip, kathreinip, targetpath );
+		return readImages( kathreinip, targetpath );
 	}
 }
 
-int readImages( struct in_addr serverip, struct in_addr kathreinip, char* targetpath ) 
+int readImages( struct in_addr kathreinip, char* targetpath ) 
 {
 	int controlConnection;
 	
 	controlConnection = openControlConnection( kathreinip, USERNAME, PASSWORD );
+	
+	installNetHelper( controlConnection );	
+
+	closeControlConnection( controlConnection );
 }
 
-int writeImages( struct in_addr serverip, struct in_addr kathreinip, char* targetpath )
+int writeImages( struct in_addr kathreinip, char* targetpath )
 {
 }
 
@@ -94,6 +93,8 @@ int openControlConnection( struct in_addr ipaddr, char* username, char* password
 	if ( connect( sock, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
 	{
 		perror( "Could not connect to the kathrein telnetd" );
+		close( socket );
+		exit( EXIT_FAILURE );
 	}
 
 	// Login to the recievers telnet session
@@ -106,11 +107,17 @@ int openControlConnection( struct in_addr ipaddr, char* username, char* password
 	waitForControlConnection( sock, "~ # " );
 	
 	// We are logged in set a new console prompt for identification
-	sendToControlConnection( sock, "PS1=\"-- AUTO IMAGE TOOLS -- \"" );
-	waitForControlConnection( sock, "\n-- AUTO IMAGE TOOLS -- " );
+	sendToControlConnection( sock, "PS1=\""COMMANDPROMPT"\"" );
+	waitForControlConnection( sock, COMMANDPROMPT );
 
 	// We are ready to proceed 
 	return sock;
+}
+
+void closeControlConnection( int sock )
+{
+	sendToControlConnection( sock, "exit" );
+	close( sock );
 }
 
 void waitForControlConnection( int sock, char* waitfor )
@@ -145,7 +152,9 @@ void waitForControlConnection( int sock, char* waitfor )
 		// Check if the string we are waiting for has appeared
 		if ( strstr( data, waitfor ) != 0 ) 
 		{
+			//DEBUG
 			printf("%s \n -- \n\n", data);
+
 			// We found the string let's cleanup and go on
 			free( data );
 			return;
@@ -199,4 +208,133 @@ void sendToControlConnection( int sock, char* data )
 	}
 	// Free the allocated buffer
 	free( echobuf );
+}
+
+int getSourceIpFromSocket( int sock, struct in_addr* ipaddr )
+{
+	int retval;
+	struct sockaddr_in saddr_in;
+	socklen_t slen;
+	
+	slen = sizeof(saddr_in);
+	retval = getsockname( sock, (struct sockaddr*)&saddr_in, &slen );	
+	memcpy( ipaddr, &saddr_in.sin_addr, sizeof(struct in_addr) );
+	return retval;
+}
+
+void installNetHelper( int controlConnection )
+{
+	struct in_addr serverip;
+	char port[6];
+	char commandline[1024];
+	char* indata;
+	int inlen;
+
+	printf( "Sending nethelper to the box.\n" );
+
+	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
+	{
+		fprintf( stderr, "The ip address of this system could not be determined.\n" );
+		close( controlConnection );
+		exit( EXIT_FAILURE );
+	}
+
+	// Get the port as string
+	memset( port, 0, 6 );
+	sprintf( port, "%d", TRANSFERPORT );
+
+	// Create the needed commandline
+	memset( commandline, 0, 1024 );
+	strcat( commandline, "cd /tmp; rm -rf nethelper; sleep 2; wget http://" );
+	strcat( commandline, (char*)inet_ntoa( serverip ) );
+	strcat( commandline, ":" );
+	strcat( commandline, port );
+	strcat( commandline, "/nethelper" );
+
+	// Send the commandline and start the transfer server
+	sendToControlConnection( controlConnection, commandline );
+	transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, strlen(NETHELPER_DATA), &indata, &inlen ); 
+	// We are not interested in the recieved data therefore just free it
+	indata[inlen] = 0;
+	printf(" RECIEVED SERVER DATA \n\n %s\n\nDATA END\n", indata );
+	free( indata );
+	
+	waitForControlConnection( controlConnection, COMMANDPROMPT );
+}
+
+int transferServer( struct in_addr* serverip, uint32_t port, void* out, int outlen, char** in, int* inlen )
+{
+	int listensock, sock;
+	struct sockaddr_in server;
+	struct sockaddr_in kathrein;
+	int kathreinlen;	
+
+	if ( ( listensock = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 ) 
+	{
+		perror( "Could not create server socket for transfer" );		
+		return -1;
+	}
+
+	server.sin_family      = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_port        = port;
+	if ( bind( listensock, (struct sockaddr *)&server, sizeof(server) ) == -1 )
+	{
+		perror( "Could not bind server socket for transfer" );
+		close( listensock );
+		return -1;
+	}
+
+	if ( listen( listensock, 1 ) == -1 )
+	{
+		perror( "Could not enter listen state for transfer" );
+		close( listensock );
+		return -1;
+	}
+
+	kathreinlen = sizeof( kathrein );
+	if ( ( sock = accept( listensock, (struct sockaddr*)&kathrein, &kathreinlen ) ) == -1 )
+	{
+		perror( "Could not accept connection for transfer" );
+		close( listensock );
+		return -1;
+	}
+
+	// Send all our given data if any
+	if ( outlen > 0 )
+	{
+		send( sock, out, outlen, 0 );
+	}
+
+	// Recieve all the given data
+	{	
+		int allocated;
+		char databuf[32 * 1024];
+		int recieved = 0;
+
+		// Allocate some space for our incoming data
+		*in       = (char*)malloc( 32 * 1024 );
+		allocated = 32 * 1024;
+		*inlen    = 0;
+		
+		while ( ( recieved = recv( sock, databuf, 32 * 1024, 0 ) ) != 0 )
+		{
+			// Reallocation needed?
+			if ( *inlen + recieved > allocated ) 
+			{
+				*in = (char*)realloc( *in, allocated + ( 32 * 1024 ) );
+			}
+
+			// Copy the new data to the buffer
+			memcpy( *in + *inlen, databuf, recieved );
+
+			// Update the amount of recieved data
+			*inlen += recieved;
+		}
+	}
+	
+	// Cleanup
+	close( sock );
+	close( listensock );
+	return 0;
 }
