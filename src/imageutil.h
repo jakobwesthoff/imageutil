@@ -1,5 +1,5 @@
 #define PROGRAM_TITLE "Kathrein UFS-910 Image Utillity"
-#define PROGRAM_VERSION "v 0.1"
+#define PROGRAM_VERSION "- PRE-ALPHA VERSION NOT FOR DISTRIBUTION -"
 
 #define USERNAME "root"
 #define PASSWORD "kathrein"

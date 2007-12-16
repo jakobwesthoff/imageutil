@@ -125,6 +125,8 @@ int readImages( struct in_addr kathreinip, char* targetpath )
 
 int writeImages( struct in_addr kathreinip, char* targetpath )
 {
+	fprintf( stderr, "Sorry image writing is not supported in this pre-alpha release\n" );
+	exit( EXIT_FAILURE );
 }
 
 int openControlConnection( struct in_addr ipaddr, char* username, char* password )
@@ -293,7 +295,7 @@ void installNetHelper( int controlConnection )
 	char* indata;
 	int inlen;
 
-	printf( "Sending nethelper to the box.\n" );
+	printf( "Installing nethelper on the box.\n" );
 
 	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
 	{
@@ -427,19 +429,24 @@ void recieveAndStoreImage( int controlConnection, char* image, char* targetpath 
 
 		if( ( fp = fopen( targetfile, "w+" ) ) == 0 )
 		{
+			printf("\n");
 			fprintf( stderr, "The targetfile \"%s\" could not be opened for writing.\n", targetfile );
+			free( targetfile );
 			close( controlConnection );
 			exit( EXIT_FAILURE );
 		}
 
 		if ( fwrite( indata, sizeof(char), inlen, fp ) != inlen ) 
 		{
+			printf("\n");
 			fprintf( stderr, "The image could not be written to the targetfile \"%s\".\n", targetfile );
 			fclose( fp );
+			free( targetfile );
 			close( controlConnection );
 			exit( EXIT_FAILURE );
 		}
 
+		free( targetfile );
 		fclose( fp );
 	}
 	
@@ -496,8 +503,6 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	// Send all our given data if any
 	if ( outlen > 0 )
 	{
-		//DEBUG
-		//printf("Sent %i bytes\n", sendall( sock, out, outlen, 0 ) );
 		if ( sendall( sock, out, outlen, 0 ) != outlen )
 		{
 			fprintf( stderr, "The given data could not be send.\n" );
