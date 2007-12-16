@@ -65,7 +65,23 @@ int readImages( struct in_addr kathreinip, char* targetpath )
 	
 	installNetHelper( controlConnection );	
 
+	// Now fetch the images one after another
+	recieveAndStoreImage( controlConnection, "kernel", targetpath );
+	recieveAndStoreImage( controlConnection, "config", targetpath );
+	recieveAndStoreImage( controlConnection, "root", targetpath );
+	recieveAndStoreImage( controlConnection, "app", targetpath );
+	recieveAndStoreImage( controlConnection, "emergency", targetpath );
+	recieveAndStoreImage( controlConnection, "data", targetpath );
+
+	// Maybe recieve the bootloader stuff, too?
+	recieveAndStoreImage( controlConnection, "boot", targetpath );
+	recieveAndStoreImage( controlConnection, "bootcfg", targetpath );	
+
+	removeNetHelper( controlConnection );
+
 	closeControlConnection( controlConnection );
+
+	printf("Everything done.\n");
 }
 
 int writeImages( struct in_addr kathreinip, char* targetpath )
@@ -154,7 +170,7 @@ void waitForControlConnection( int sock, char* waitfor )
 		if ( strstr( data, waitfor ) != 0 ) 
 		{
 			//DEBUG
-			printf("%s \n -- \n\n", data);
+//			printf("%s \n -- \n\n", data);
 
 			// We found the string let's cleanup and go on
 			free( data );
@@ -184,14 +200,14 @@ void sendToControlConnection( int sock, char* data )
 	while ( neededBytes < strlen(data) + 1 ) 
 	{
 		// DEBUG
-		printf(">> Waiting for echo\n");
+//		printf(">> Waiting for echo\n");
 		// DEBUG
-		memset( echobuf, 0, strlen(data) + 1 );
+//		memset( echobuf, 0, strlen(data) + 1 );
 
 		recvBytes = recv( sock, echobuf, strlen(data) + 1 - neededBytes, 0 );
 		
 		// DEBUG
-		printf(">> Recieved part of echo: \"%s\"\n", echobuf );
+//		printf(">> Recieved part of echo: \"%s\"\n", echobuf );
 	
 		// Something went wrong
 		if ( recvBytes == 0 )
@@ -204,7 +220,7 @@ void sendToControlConnection( int sock, char* data )
 		neededBytes += recvBytes;
 		
 		// DEBUG
-		printf(">> Recieved %i bytes of %i bytes\n", neededBytes, strlen(data) + 1 );
+//		printf(">> Recieved %i bytes of %i bytes\n", neededBytes, strlen(data) + 1 );
 
 	}
 	// Free the allocated buffer
@@ -226,7 +242,7 @@ int getSourceIpFromSocket( int sock, struct in_addr* ipaddr )
 void installNetHelper( int controlConnection )
 {
 	struct in_addr serverip;
-	char port[6];
+	char port[7];
 	char commandline[1024];
 	char* indata;
 	int inlen;
@@ -241,7 +257,7 @@ void installNetHelper( int controlConnection )
 	}
 
 	// Get the port as string
-	memset( port, 0, 6 );
+	memset( port, 0, 7 );
 	sprintf( port, "%d", TRANSFERPORT );
 
 	// Create the needed commandline
@@ -256,13 +272,13 @@ void installNetHelper( int controlConnection )
 	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
 	waitForControlConnection( controlConnection, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, commandline );
-	transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, NETHELPER_DATA_LEN, &indata, &inlen ); 
+	
+	if ( transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, NETHELPER_DATA_LEN, &indata, &inlen, 0, 0 ) == -1 )
+	{
+		close( controlConnection );
+		exit( EXIT_FAILURE );
+	}
 	// We are not interested in the recieved data therefore just free it
-	
-	// DEBUG
-	indata[inlen] = 0;
-	printf(" RECIEVED SERVER DATA \n\n %s\n\nDATA END\n", indata );
-	
 	free( indata );
 	
 	waitForControlConnection( controlConnection, COMMANDPROMPT );
@@ -270,7 +286,130 @@ void installNetHelper( int controlConnection )
 	waitForControlConnection( controlConnection, COMMANDPROMPT );
 }
 
-int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen, char** in, int* inlen )
+void removeNetHelper( int controlConnection )
+{
+	printf("Removing nethelper from the box.\n");
+	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
+	waitForControlConnection( controlConnection, COMMANDPROMPT );
+}
+
+void recieveAndStoreImage( int controlConnection, char* image, char* targetpath )
+{
+	char *mtdblock;
+	char commandline[1024];
+	struct in_addr serverip;
+	char port[7];
+	char* indata;
+	int inlen;
+
+	// Determine which mtdblock is needed
+	if ( !strcmp( image, "boot" ) )
+	{
+		mtdblock = "0";
+	}
+	else if ( !strcmp( image, "kernel" ) )
+	{
+		mtdblock = "1";
+	}
+	else if ( !strcmp( image, "config" ) )
+	{
+		mtdblock = "2";
+	}
+	else if ( !strcmp( image, "root" ) )
+	{
+		mtdblock = "3";
+	}
+	else if ( !strcmp( image, "app" ) )
+	{
+		mtdblock = "4";
+	}
+	else if ( !strcmp( image, "emergency" ) )
+	{
+		mtdblock = "5";
+	}
+	else if ( !strcmp( image, "data" ) )
+	{
+		mtdblock = "6";
+	}
+	else if ( !strcmp( image, "bootcfg" ) )
+	{
+		mtdblock = "7";
+	}
+
+	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
+	{
+		fprintf( stderr, "The ip address of this system could not be determined.\n" );
+		close( controlConnection );
+		exit( EXIT_FAILURE );
+	}
+
+	// Get the port as string
+	memset( port, 0, 7 );
+	sprintf( port, "%d", TRANSFERPORT );
+
+	// Construct the needed commandline
+	memset( commandline, 0, 1024 );
+	strcat( commandline, "sleep 2; dd if=/dev/mtdblock" );
+	strcat( commandline, mtdblock );
+	strcat( commandline, " | /tmp/nethelper " );
+	strcat( commandline, (char*)inet_ntoa( serverip ) );
+	strcat( commandline, " " );
+	strcat( commandline, port );
+
+	printf( "Transfering %s image...", image );
+
+	// Execute the commandline and recieve the image
+	sendToControlConnection( controlConnection, commandline );	
+	if ( transferServer( &serverip, htons( TRANSFERPORT ),  0, 0, &indata, &inlen, &recieveImageCallback, image ) == -1 )
+	{
+		close( controlConnection );
+		exit( EXIT_FAILURE );
+	}
+
+	// Store the image to the hdd
+	{
+		FILE* fp;
+		char* targetfile;
+		
+		targetfile = (char*)malloc(strlen(targetpath) + 32);
+		
+		memset( targetfile, 0, strlen(targetpath) + 32 );
+		strcat( targetfile, targetpath );
+		strcat( targetfile, "/" );
+		strcat( targetfile, image );
+		strcat( targetfile, ".img" );
+
+		if( ( fp = fopen( targetfile, "w+" ) ) == 0 )
+		{
+			fprintf( stderr, "The targetfile \"%s\" could not be opened for writing.\n", targetfile );
+			close( controlConnection );
+			exit( EXIT_FAILURE );
+		}
+
+		if ( fwrite( indata, sizeof(char), inlen, fp ) != inlen ) 
+		{
+			fprintf( stderr, "The image could not be written to the targetfile \"%s\".\n", targetfile );
+			fclose( fp );
+			close( controlConnection );
+			exit( EXIT_FAILURE );
+		}
+
+		fclose( fp );
+	}
+	
+	// Free the indata
+	free( indata );
+	
+	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	printf( "\rTransfered %s image. (%i kb)          \n", image, inlen/1024 );
+}
+
+void recieveImageCallback( int bytes, void* data )
+{
+	printf( "\rTransfering %s image... (%i kb)", (char*)data, bytes/1024 );
+}
+
+int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen, char** in, int* inlen, void (*callback)(int, void*), void* data )
 {
 	int listensock, sock;
 	struct sockaddr_in server;
@@ -311,7 +450,15 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	// Send all our given data if any
 	if ( outlen > 0 )
 	{
-		printf("Sent %i bytes\n", send( sock, out, outlen, 0 ) );
+		//DEBUG
+		//printf("Sent %i bytes\n", send( sock, out, outlen, 0 ) );
+		if ( send( sock, out, outlen, 0 ) != outlen )
+		{
+			fprintf( stderr, "The given data could not be send.\n" );
+			close( listensock );
+			close( sock );
+			return -1;
+		}
 	}
 	
 	// Recieve all the given data
@@ -331,6 +478,7 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 			if ( *inlen + recieved > allocated ) 
 			{
 				*in = (char*)realloc( *in, allocated + ( 32 * 1024 ) );
+				allocated += 32 * 1024;
 			}
 
 			// Copy the new data to the buffer
@@ -338,6 +486,12 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 
 			// Update the amount of recieved data
 			*inlen += recieved;
+
+			// Call the callback if one is defined
+			if ( callback != 0 ) 
+			{
+				callback( *inlen, data );
+			}
 		}
 	}
 
