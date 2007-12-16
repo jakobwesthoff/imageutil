@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <errno.h>
 
 #include <stdarg.h>
@@ -79,10 +80,15 @@ int main( int argc, char** argv )
 				fprintf( stderr, "The supplied target path is not a directory.\n" );
 				exit( EXIT_FAILURE );
 			}
+			// Check if the existing target is writable
+			if ( access( argv[3], W_OK ) == -1 )
+			{
+				perror( "The supplied target directory is not writable" );
+				exit( EXIT_FAILURE );
+			}
 		}
 		
 		// The target path should be valid at this point
-		// @todo: maybe it is not writable, this should be checked too
 		targetpath = argv[3];
 	}
 
@@ -151,7 +157,7 @@ int openControlConnection( struct in_addr ipaddr, char* username, char* password
 	if ( connect( sock, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
 	{
 		perror( "Could not connect to the kathrein telnetd" );
-		close( socket );
+		close( sock );
 		exit( EXIT_FAILURE );
 	}
 
@@ -207,6 +213,10 @@ int waitForControlConnection( int sock, int waitnum, ... )
 
 		// Add the read data to our data buffer
 		memcpy( data + bytesRead, buf, lastRead );
+
+		//DEBUG
+//		fwrite( buf, 1, lastRead, stdout );
+//		printf("\n -- \n\n");
 
 		// Update byte counter
 		bytesRead += lastRead;
