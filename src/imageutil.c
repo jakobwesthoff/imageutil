@@ -1,5 +1,7 @@
 
 #include <stdio.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include <stdarg.h>
 
@@ -47,8 +49,42 @@ int main( int argc, char** argv )
 		exit( EXIT_FAILURE );
 	}
 
-	// @todo: validate the target path and possibly create it
-	targetpath = argv[3];
+	// Target path validation
+	{
+		// Check if the target path exists
+		struct stat stats;
+		if ( stat( argv[3], &stats ) == -1 )
+		{
+			if ( errno == ENOENT )
+			{
+				// Create the directory if it does not exist
+				if ( mkdir( argv[3], 0755 ) == -1 )
+				{
+					perror( "The target directory could not be created" );
+					exit( EXIT_FAILURE );
+				}
+			}
+			else
+			{
+				// An error occured during the stats call
+				perror("An error occured during the validation of the target directory");
+				exit( EXIT_FAILURE );
+			}
+		}
+		else
+		{
+			// Check if the existing target is a directory
+			if ( !S_ISDIR( stats.st_mode ) )
+			{
+				fprintf( stderr, "The supplied target path is not a directory.\n" );
+				exit( EXIT_FAILURE );
+			}
+		}
+		
+		// The target path should be valid at this point
+		// @todo: maybe it is not writable, this should be checked too
+		targetpath = argv[3];
+	}
 
 	if ( !strcasecmp( argv[1], "w" ) ) 
 	{
