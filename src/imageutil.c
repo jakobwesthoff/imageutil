@@ -1,6 +1,8 @@
 
 #include <stdio.h>
 
+#include <stdarg.h>
+
 #include <stdlib.h>
 
 #include <string.h>
@@ -116,17 +118,19 @@ int openControlConnection( struct in_addr ipaddr, char* username, char* password
 	}
 
 	// Login to the recievers telnet session
-	waitForControlConnection( sock, "login:" );
-	sendToControlConnection( sock, USERNAME );
-	waitForControlConnection( sock, "Password:" );
-	// Send the password manually because it is not echoed back
-	send( sock, PASSWORD, strlen(PASSWORD), 0 );
-	send( sock, "\n", 1, 0 );
-	waitForControlConnection( sock, "~ # " );
+	if ( waitForControlConnection( sock, 2, "login:", "# " ) == 0 )
+	{
+		sendToControlConnection( sock, USERNAME );
+		waitForControlConnection( sock, 1, "Password:" );
+		// Send the password manually because it is not echoed back
+		sendall( sock, PASSWORD, strlen(PASSWORD), 0 );
+		sendall( sock, "\n", 1, 0 );
+		waitForControlConnection( sock, 1, "# " );
+	}
 	
 	// We are logged in set a new console prompt for identification
 	sendToControlConnection( sock, "PS1=\""COMMANDPROMPT"\"" );
-	waitForControlConnection( sock, COMMANDPROMPT );
+	waitForControlConnection( sock, 1, COMMANDPROMPT );
 
 	// We are ready to proceed 
 	return sock;
@@ -138,13 +142,15 @@ void closeControlConnection( int sock )
 	close( sock );
 }
 
-void waitForControlConnection( int sock, char* waitfor )
+int waitForControlConnection( int sock, int waitnum, ... )
 {
 	char *data;
 	int datalen = 1024;
 	char buf[1024];
 	int bytesRead = 0;
 	int lastRead = 0;	
+	va_list va;
+	int i;
 
 	// Allocate 1024 bytes for our data buffer
 	data = (char*)malloc( datalen );
@@ -167,16 +173,19 @@ void waitForControlConnection( int sock, char* waitfor )
 		// Update byte counter
 		bytesRead += lastRead;
 
-		// Check if the string we are waiting for has appeared
-		if ( strstr( data, waitfor ) != 0 ) 
+		// Check if one of the string we are waiting for has appeared
+		va_start( va, waitnum );
+		for ( i = 0; i < waitnum; i++ )
 		{
-			//DEBUG
-//			printf("%s \n -- \n\n", data);
-
-			// We found the string let's cleanup and go on
-			free( data );
-			return;
+			char* waitfor = va_arg( va, char* );
+			if ( strstr( data, waitfor ) != 0 ) 
+			{
+				// We found the string let's cleanup and go on
+				free( data );
+				return i;
+			}
 		}
+		va_end( va );
 	}
 
 	// The connection terminated while we were waiting for a string
@@ -194,8 +203,8 @@ void sendToControlConnection( int sock, char* data )
 	echobuf = (char*)malloc( strlen(data) + 1 );
 
 	// Send the command followed by a newline
-	send( sock, data, strlen(data), 0 );
-	send( sock, "\n", 1, 0 );
+	sendall( sock, data, strlen(data), 0 );
+	sendall( sock, "\n", 1, 0 );
 
 	// Recieve the echoed input and just throw it away
 	while ( neededBytes < strlen(data) + 1 ) 
@@ -271,7 +280,7 @@ void installNetHelper( int controlConnection )
 
 	// Send the commandline and start the transfer server
 	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
-	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, commandline );
 	
 	if ( transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, NETHELPER_DATA_LEN, &indata, &inlen, 0, 0 ) == -1 )
@@ -282,16 +291,16 @@ void installNetHelper( int controlConnection )
 	// We are not interested in the recieved data therefore just free it
 	free( indata );
 	
-	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, "chmod u+x nethelper" );
-	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 }
 
 void removeNetHelper( int controlConnection )
 {
 	printf("Removing nethelper from the box.\n");
 	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
-	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 }
 
 void recieveAndStoreImage( int controlConnection, char* image, char* targetpath )
@@ -401,7 +410,7 @@ void recieveAndStoreImage( int controlConnection, char* image, char* targetpath 
 	// Free the indata
 	free( indata );
 	
-	waitForControlConnection( controlConnection, COMMANDPROMPT );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	printf( "\rTransfered %s image. (%i kb)          \n", image, inlen/1024 );
 }
 
@@ -452,8 +461,8 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	if ( outlen > 0 )
 	{
 		//DEBUG
-		//printf("Sent %i bytes\n", send( sock, out, outlen, 0 ) );
-		if ( send( sock, out, outlen, 0 ) != outlen )
+		//printf("Sent %i bytes\n", sendall( sock, out, outlen, 0 ) );
+		if ( sendall( sock, out, outlen, 0 ) != outlen )
 		{
 			fprintf( stderr, "The given data could not be send.\n" );
 			close( listensock );
@@ -500,4 +509,22 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	close( sock );
 	close( listensock );
 	return 0;
+}
+
+ssize_t sendall( int s , const void * msg , size_t len , int flags )
+{
+	ssize_t completed = 0;
+	ssize_t bytesSend;
+
+	while ( completed < len )
+	{
+		bytesSend = send( s, msg, len, flags );
+		
+		if ( bytesSend == -1 )
+		{
+			return -1;
+		}
+
+		completed += bytesSend;
+	}
 }
