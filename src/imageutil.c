@@ -36,6 +36,7 @@ int main( int argc, char** argv )
 		printf( "An action needs to be specified. It can be either \"r\" for read or \"w\" for write.\n" );
 		printf( "Kathreinip specifies the ip addr of the kathrein reciever.\n" );
 		printf( "Pathname specifies the directory containing the images to read from or write to.\n" );	
+		exit( EXIT_FAILURE );
 	}
 
 	if ( inet_aton( argv[2], &kathreinip ) == 0 )
