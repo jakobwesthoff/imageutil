@@ -215,10 +215,6 @@ int waitForControlConnection( int waitnum, ... )
 		// Add the read data to our data buffer
 		memcpy( data + bytesRead, buf, lastRead );
 
-		//DEBUG
-//		fwrite( buf, 1, lastRead, stdout );
-//		printf("\n -- \n\n");
-
 		// Update byte counter
 		bytesRead += lastRead;
 
@@ -257,16 +253,8 @@ void sendToControlConnection( char* data )
 	// Recieve the echoed input and just throw it away
 	while ( neededBytes < strlen(data) + 1 ) 
 	{
-		// DEBUG
-//		printf(">> Waiting for echo\n");
-		// DEBUG
-//		memset( echobuf, 0, strlen(data) + 1 );
-
 		recvBytes = recv( controlConnection, echobuf, strlen(data) + 1 - neededBytes, 0 );
 		
-		// DEBUG
-//		printf(">> Recieved part of echo: \"%s\"\n", echobuf );
-	
 		// Something went wrong
 		if ( recvBytes == 0 )
 		{
@@ -275,10 +263,6 @@ void sendToControlConnection( char* data )
 		}
 
 		neededBytes += recvBytes;
-		
-		// DEBUG
-//		printf(">> Recieved %i bytes of %i bytes\n", neededBytes, strlen(data) + 1 );
-
 	}
 	// Free the allocated buffer
 	free( echobuf );
