@@ -106,10 +106,11 @@ int main( int argc, char** argv )
 int readImages( struct in_addr kathreinip, char* targetpath ) 
 {
 	int controlConnection;
+	int nethelperConnection;
 	
 	controlConnection = openControlConnection( kathreinip, USERNAME, PASSWORD );
 	
-	installNetHelper( controlConnection );	
+	nethelperConnection = installNetHelper( controlConnection );	
 
 	// Now fetch the images one after another
 	recieveAndStoreImage( controlConnection, "kernel", targetpath );
@@ -123,7 +124,7 @@ int readImages( struct in_addr kathreinip, char* targetpath )
 	recieveAndStoreImage( controlConnection, "boot", targetpath );
 	recieveAndStoreImage( controlConnection, "bootcfg", targetpath );	
 
-	removeNetHelper( controlConnection );
+	removeNetHelper( controlConnection, nethelperConnection );
 
 	closeControlConnection( controlConnection );
 
@@ -302,7 +303,19 @@ int getSourceIpFromSocket( int sock, struct in_addr* ipaddr )
 	return retval;
 }
 
-void installNetHelper( int controlConnection )
+int getDestinationIpFromSocket( int sock, struct in_addr* ipaddr )
+{
+	int retval;
+	struct sockaddr_in saddr_in;
+	socklen_t slen;
+	
+	slen = sizeof(saddr_in);
+	retval = getpeername( sock, (struct sockaddr*)&saddr_in, &slen );	
+	memcpy( ipaddr, &saddr_in.sin_addr, sizeof(struct in_addr) );
+	return retval;
+}
+
+int installNetHelper( int controlConnection )
 {
 	struct in_addr serverip;
 	char port[7];
@@ -311,6 +324,9 @@ void installNetHelper( int controlConnection )
 	int inlen;
 	char* outdata;
 	int outlen;
+	int nethelperConnection;
+	struct sockaddr_in kathrein;
+	struct in_addr kathreinip;
 
 	printf( "Installing nethelper on the box.\n" );
 
@@ -359,23 +375,67 @@ void installNetHelper( int controlConnection )
 	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, "chmod u+x nethelper" );
 	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
+	sendToControlConnection( controlConnection, "/tmp/nethelper" );
+
+	sleep( 2 );
+
+	// Get the kathrein ip based on the controlConnection
+	if ( getDestinationIpFromSocket( controlConnection, &kathreinip ) == -1 )
+	{
+		fprintf( stderr, "The ip address of the kathrein could not be determined.\n" );
+		close( controlConnection );
+		exit( EXIT_FAILURE );
+	}
+
+	// Connect to the nethelper
+	nethelperConnection = socket( AF_INET, SOCK_STREAM, 0 );
+	if ( nethelperConnection == -1 ) 
+	{
+		perror("Could not create socket for nethelper connection" );
+		exit( EXIT_FAILURE );
+	}
+
+	// Fill our connection information
+	kathrein.sin_addr = kathreinip;
+	kathrein.sin_family = AF_INET;
+	kathrein.sin_port = htons( TRANSFERPORT ); 
+	
+	// Try to connect to the nethelper
+	if ( connect( sock, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
+	{
+		perror( "Could not connect to the nethelper" );
+		close( nethelperConnection );
+		exit( EXIT_FAILURE );
+	}
+
+	return nethelperConnection;
 }
 
-void removeNetHelper( int controlConnection )
+void removeNetHelper( int controlConnection, int nethelperConnection )
 {
+	char* cmd = "exit\n";
+	int cmdlen = strlen( cmd );
+
 	printf("Removing nethelper from the box.\n");
+	if ( sendall( nethelperConnection, cmd, cmdlen, 0 ) != cmdlen )
+	{
+		fprintf( stderr, "Could not send command to the nethelper.\n" );
+	}
+	close( nethelperConnection );
+	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
 	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 }
 
-void recieveAndStoreImage( int controlConnection, char* image, char* targetpath )
+void recieveAndStoreImage( int nethelperConnection, char* image, char* targetpath )
 {
 	char *mtdblock;
-	char commandline[1024];
+	char commandline[32];
 	struct in_addr serverip;
 	char port[7];
 	char* indata;
 	int inlen;
+	int allocated;
 
 	// Determine which mtdblock is needed
 	if ( !strcmp( image, "boot" ) )
@@ -411,7 +471,7 @@ void recieveAndStoreImage( int controlConnection, char* image, char* targetpath 
 		mtdblock = "7";
 	}
 
-	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
+	if ( getSourceIpFromSocket( nethelperConnection, &serverip ) == -1 )
 	{
 		fprintf( stderr, "The ip address of this system could not be determined.\n" );
 		close( controlConnection );
@@ -423,23 +483,24 @@ void recieveAndStoreImage( int controlConnection, char* image, char* targetpath 
 	sprintf( port, "%d", TRANSFERPORT );
 
 	// Construct the needed commandline
-	memset( commandline, 0, 1024 );
-	strcat( commandline, "sleep 2; dd if=/dev/mtdblock" );
+	memset( commandline, 0, 32 );
+	strcat( commandline, "read " );
 	strcat( commandline, mtdblock );
-	strcat( commandline, " | /tmp/nethelper " );
-	strcat( commandline, (char*)inet_ntoa( serverip ) );
-	strcat( commandline, " " );
-	strcat( commandline, port );
+	strcat( commandline, "\n" );
 
 	printf( "Transfering %s image...", image );
 
-	// Execute the commandline and recieve the image
-	sendToControlConnection( controlConnection, commandline );	
-	if ( transferServer( &serverip, htons( TRANSFERPORT ),  0, 0, &indata, &inlen, &recieveImageCallback, image ) == -1 )
+	// Execute the commandline
+	if ( sendall( nethelperConnection, commandline, strlen( commandline ), 0 ) != strlen( commandline ) )
 	{
+		printf( "\n" );
+		fprintf( stderr, "Could not send command to the nethelper.\n" );
+		close( nethelperConnection );
 		close( controlConnection );
 		exit( EXIT_FAILURE );
 	}
+
+	// @todo: add code to fetch error string and recieve data
 
 	// Store the image to the hdd
 	{

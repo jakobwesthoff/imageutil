@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* socket and network stuff */
 #include <sys/types.h>
@@ -7,78 +8,144 @@
 #include <netinet/in.h>
 
 #include "nethelper.h"
+#include "errorcodes.h"
 
 int main( int argc, char** argv )
 {
-	int    sock;
-	struct sockaddr_in  server;
-	struct in_addr targetip;
-	int targetport;
+	int listensock, sock;
+	struct sockaddr_in server;
+	struct sockaddr_in client;
+	int clientlen;
 
-	char buffer[1024];
-	int byteCount = 0;
-
-	if ( argc < 2 )
+	if ( ( listensock = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 ) 
 	{
-		printf( "Image utillity nethelper tool\n" );
-		printf( "This tool should only be automatically called\n" );
-		printf( "Manually calling is not encouraged\n" );
-		exit( EXIT_FAILURE );
+		perror( "Could not create server socket for transfer" );		
+		return -1;
 	}
 
-	if ( inet_aton( argv[1], &targetip ) == 0 )
+	server.sin_family      = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_port        = htons( TRANSFERPORT );
+	if ( bind( listensock, (struct sockaddr *)&server, sizeof(server) ) == -1 )
 	{
-		fprintf( stderr, "The given targetip \"%s\" could not be parsed\n", argv[1] );
-		exit( EXIT_FAILURE );
+		perror( "Could not bind server socket for transfer" );
+		close( listensock );
+		return -1;
 	}
 
-	if ( ( targetport = atoi( argv[2] ) ) == 0 ) 
-	/* 0 is an invalid port therefore no check if a real 0 was given is needed */
+	if ( listen( listensock, 1 ) == -1 )
 	{
-		fprintf( stderr, "The given targetport \"%s\" could not be parsed\n", argv[2] );
-		exit( EXIT_FAILURE );
-	}
-	
-	// Create our needed socket
-	if ( ( sock = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 )
-	{
-		perror("Could not create socket" );
-		exit( EXIT_FAILURE );
+		perror( "Could not enter listen state for transfer" );
+		close( listensock );
+		return -1;
 	}
 
-	// Fill our connection information
-	server.sin_addr = targetip;
-	server.sin_family = AF_INET;
-	server.sin_port = htons( targetport ); 
-	
-	// Try to connect to the kathrein telnetd
-	if ( connect( sock, (struct sockaddr*)&server, sizeof( server ) ) == -1 )
+	clientlen = sizeof( client );
+	if ( ( sock = accept( listensock, (struct sockaddr*)&client, &clientlen ) ) == -1 )
 	{
-		perror( "Could not connect to target server" );
+		perror( "Could not accept connection for transfer" );
+		close( listensock );
+		return -1;
+	}
+
+	// Handle the commands
+	if ( commandLoop( sock ) == -1)
+	{
 		close( sock );
+		close( listensock );
 		exit( EXIT_FAILURE );
 	}
+	
+	// Cleanup
+	close( sock );
+	close( listensock );
+	return EXIT_SUCCESS;
+}
 
-	// Read everything on stdin and send it to the server
-	while ( ( byteCount = fread( buffer, 1, 1024, stdin ) ) != 0 )
+int commandLoop( int sock )
+{
+	while ( 1 )
 	{
-		if ( sendall( sock, buffer, byteCount, 0 ) != byteCount )
+		char buffer;
+		char command[1024];
+		int commandlength = 0;
+		int readBytes = 0;
+
+		memset( command, 0, 1024 );
+
+		// Read incoming data one character by another until a newline occurs
+		while ( ( readBytes = recv( sock, &buffer, 1, 0 ) != 0 ) )
 		{
-			fprintf( stderr, "There was an error transmitting the read data.\n" );
-			close( sock );
-			exit( EXIT_FAILURE );
+			if ( buffer == '\n' )
+			{
+				command[commandlength++] = 0;
+				break;
+			}
+			else if ( buffer == ' ' )
+			{
+				command[commandlength++] = 0;
+			}
+			else
+			{
+				command[commandlength++] = buffer;
+			}
+		}
+
+		if ( readBytes == 0 )
+		{
+			fprintf( stderr, "The transfer connection died unexpectedly.\n" );
+			return -1;
+		}
+
+		// Decide which command was given and what needs to be done
+		if ( !strcasecmp( command, "exit" ) )
+		{
+			return EXIT_SUCCESS;
+		}
+		else if ( !strcasecmp( command, "read" ) )
+		{
+			char* mtdblock;
+			char mtddevice[256];
+			char mtdsize[128];
+			char* buffer;
+			int bytesRead = 0;
+			FILE* fp;
+
+			memset( mtddevice, 0, 256 );
+			memset( mtdsize, 0, 128 );
+
+			mtdblock = command + strlen(command) + 1;
+			
+			sprintf( mtddevice, "/dev/mtdblock%s", mtdblock );
+
+			if ( ( fp = fopen( mtddevice, "r" ) ) == 0 )
+			{
+				sendErrorResponse( sock, E_COULD_NOT_OPEN_MTDBLOCK, 0, 0 );
+				return -1;
+			}
+
+			fseek( fp, 0, SEEK_END );
+			sprintf( mtdsize, "%i", ftell( fp ) + 1 );
+			fseek( fp, 0, SEEK_SET );
+
+			sendErrorResponse( sock, E_TRANSFERING_MTDBLOCK, mtdsize, strlen(mtdsize) );
+
+			buffer = (char*)malloc(32 * 1024);
+			
+			while( ( bytesRead = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
+			{
+				if ( sendall( sock, buffer, bytesRead, 0 ) != bytesRead )
+				{
+					fprintf( stderr, "The data could not be send to the pc.\n" );
+					return -1;
+				}
+			}
+
+			free( buffer );	
+
+			fclose( fp );
 		}
 	}
-
-	if ( !feof( stdin ) )
-	{
-		perror( "Error during stdin reading" );
-		close( sock );
-		exit( EXIT_FAILURE );
-	}
-	
-	close( sock );
-	return EXIT_SUCCESS;
 }
 
 ssize_t sendall( int s , const void * msg , size_t len , int flags )
@@ -96,5 +163,22 @@ ssize_t sendall( int s , const void * msg , size_t len , int flags )
 		}
 
 		completed += bytesSend;
+	}
+}
+
+int sendErrorResponse( int sock, int code, char* data, int datalen )
+{
+	char* errorString;
+
+	errorString = (char*)malloc( datalen + 32 );
+	memset( errorString, 0, datalen + 32 );
+	sprintf( errorString, "E %i ", code );
+	errorString[strlen(errorString) + datalen] = '\n';	
+	memcpy( errorString + strlen(errorString), data, datalen );
+
+	if ( sendall( sock, errorString, strlen(errorString), 0 ) != strlen(errorString) )
+	{
+		fprintf( stderr, "The data could not be send to the pc.\n" );
+		return -1;
 	}
 }
