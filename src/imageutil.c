@@ -128,6 +128,8 @@ int readImages( struct in_addr kathreinip, char* targetpath )
 	closeControlConnection( controlConnection );
 
 	printf("Everything done.\n");
+
+	return 0;
 }
 
 int writeImages( struct in_addr kathreinip, char* targetpath )
@@ -200,6 +202,8 @@ int waitForControlConnection( int sock, int waitnum, ... )
 	// Allocate 1024 bytes for our data buffer
 	data = (char*)malloc( datalen );
 	memset(data, 0, datalen);
+
+	//@todo: integrate timeout by using select instead of recv directly
 
 	while( ( lastRead = recv( sock, buf, 1024, 0 ) ) != 0 ) 
 	{
