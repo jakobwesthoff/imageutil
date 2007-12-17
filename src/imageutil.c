@@ -16,8 +16,12 @@
 #include <netinet/in.h>
 
 #include "nethelper_resource.h"
+#include "kathi/errorcodes.h"
 
 #include "imageutil.h"
+
+int controlConnection   = 0;
+int nethelperConnection = 0;
 
 int main( int argc, char** argv ) 
 {
@@ -105,28 +109,25 @@ int main( int argc, char** argv )
 
 int readImages( struct in_addr kathreinip, char* targetpath ) 
 {
-	int controlConnection;
-	int nethelperConnection;
+	openControlConnection( kathreinip, USERNAME, PASSWORD );
 	
-	controlConnection = openControlConnection( kathreinip, USERNAME, PASSWORD );
-	
-	nethelperConnection = installNetHelper( controlConnection );	
+	installNetHelper();	
 
 	// Now fetch the images one after another
-	recieveAndStoreImage( controlConnection, "kernel", targetpath );
-	recieveAndStoreImage( controlConnection, "config", targetpath );
-	recieveAndStoreImage( controlConnection, "root", targetpath );
-	recieveAndStoreImage( controlConnection, "app", targetpath );
-	recieveAndStoreImage( controlConnection, "emergency", targetpath );
-	recieveAndStoreImage( controlConnection, "data", targetpath );
+	recieveAndStoreImage( "kernel", targetpath );
+	recieveAndStoreImage( "config", targetpath );
+	recieveAndStoreImage( "root", targetpath );
+	recieveAndStoreImage( "app", targetpath );
+	recieveAndStoreImage( "emergency", targetpath );
+	recieveAndStoreImage( "data", targetpath );
 
 	// Maybe recieve the bootloader stuff, too?
-	recieveAndStoreImage( controlConnection, "boot", targetpath );
-	recieveAndStoreImage( controlConnection, "bootcfg", targetpath );	
+	recieveAndStoreImage( "boot", targetpath );
+	recieveAndStoreImage( "bootcfg", targetpath );	
 
-	removeNetHelper( controlConnection, nethelperConnection );
+	removeNetHelper();
 
-	closeControlConnection( controlConnection );
+	closeControlConnection();
 
 	printf("Everything done.\n");
 
@@ -139,17 +140,15 @@ int writeImages( struct in_addr kathreinip, char* targetpath )
 	exit( EXIT_FAILURE );
 }
 
-int openControlConnection( struct in_addr ipaddr, char* username, char* password )
+void openControlConnection( struct in_addr ipaddr, char* username, char* password )
 {
-	int    sock;
 	struct sockaddr_in  kathrein;
 	
 	// Create our needed socket
-	sock = socket( AF_INET, SOCK_STREAM, 0 );
-	if ( sock == -1 ) 
+	if ( ( controlConnection = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 )
 	{
 		perror("Could not create socket for control connection" );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
 
 	// Fill our connection information
@@ -158,39 +157,35 @@ int openControlConnection( struct in_addr ipaddr, char* username, char* password
 	kathrein.sin_port = htons( 23 ); 
 	
 	// Try to connect to the kathrein telnetd
-	if ( connect( sock, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
+	if ( connect( controlConnection, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
 	{
 		perror( "Could not connect to the kathrein telnetd" );
-		close( sock );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
 
 	// Login to the recievers telnet session
-	if ( waitForControlConnection( sock, 2, "login:", "# " ) == 0 )
+	if ( waitForControlConnection( 2, "login:", "# " ) == 0 )
 	{
-		sendToControlConnection( sock, USERNAME );
-		waitForControlConnection( sock, 1, "Password:" );
+		sendToControlConnection( USERNAME );
+		waitForControlConnection( 1, "Password:" );
 		// Send the password manually because it is not echoed back
-		sendall( sock, PASSWORD, strlen(PASSWORD), 0 );
-		sendall( sock, "\n", 1, 0 );
-		waitForControlConnection( sock, 1, "# " );
+		sendall( controlConnection, PASSWORD, strlen(PASSWORD), 0 );
+		sendall( controlConnection, "\n", 1, 0 );
+		waitForControlConnection( 1, "# " );
 	}
 	
 	// We are logged in set a new console prompt for identification
-	sendToControlConnection( sock, "PS1=\""COMMANDPROMPT"\"" );
-	waitForControlConnection( sock, 1, COMMANDPROMPT );
-
-	// We are ready to proceed 
-	return sock;
+	sendToControlConnection( "PS1=\""COMMANDPROMPT"\"" );
+	waitForControlConnection( 1, COMMANDPROMPT );
 }
 
-void closeControlConnection( int sock )
+void closeControlConnection()
 {
-	sendToControlConnection( sock, "exit" );
-	close( sock );
+	sendToControlConnection( "exit" );
+	close( controlConnection );
 }
 
-int waitForControlConnection( int sock, int waitnum, ... )
+int waitForControlConnection( int waitnum, ... )
 {
 	char *data;
 	int datalen = 1024;
@@ -206,7 +201,7 @@ int waitForControlConnection( int sock, int waitnum, ... )
 
 	//@todo: integrate timeout by using select instead of recv directly
 
-	while( ( lastRead = recv( sock, buf, 1024, 0 ) ) != 0 ) 
+	while( ( lastRead = recv( controlConnection, buf, 1024, 0 ) ) != 0 ) 
 	{
 		// Check if we need to get more space for the data
 		if ( bytesRead + lastRead > datalen ) 
@@ -245,11 +240,10 @@ int waitForControlConnection( int sock, int waitnum, ... )
 	// The connection terminated while we were waiting for a string
 	// This should not happen, therefore bail out
 	fprintf( stderr, "The control connection to the kathrein reciever terminated unexpectedly.\n" );
-	close( sock );
-	exit( EXIT_FAILURE );
+	errorExit();
 }
 
-void sendToControlConnection( int sock, char* data )
+void sendToControlConnection( char* data )
 {
 	char* echobuf;
 	int recvBytes   = 0;
@@ -257,8 +251,8 @@ void sendToControlConnection( int sock, char* data )
 	echobuf = (char*)malloc( strlen(data) + 1 );
 
 	// Send the command followed by a newline
-	sendall( sock, data, strlen(data), 0 );
-	sendall( sock, "\n", 1, 0 );
+	sendall( controlConnection, data, strlen(data), 0 );
+	sendall( controlConnection, "\n", 1, 0 );
 
 	// Recieve the echoed input and just throw it away
 	while ( neededBytes < strlen(data) + 1 ) 
@@ -268,7 +262,7 @@ void sendToControlConnection( int sock, char* data )
 		// DEBUG
 //		memset( echobuf, 0, strlen(data) + 1 );
 
-		recvBytes = recv( sock, echobuf, strlen(data) + 1 - neededBytes, 0 );
+		recvBytes = recv( controlConnection, echobuf, strlen(data) + 1 - neededBytes, 0 );
 		
 		// DEBUG
 //		printf(">> Recieved part of echo: \"%s\"\n", echobuf );
@@ -277,8 +271,7 @@ void sendToControlConnection( int sock, char* data )
 		if ( recvBytes == 0 )
 		{
 			fprintf( stderr, "The control connection to the kathrein reciever terminated unexpectedly.\n" );
-			close( sock );
-			exit( EXIT_FAILURE );
+			errorExit();
 		}
 
 		neededBytes += recvBytes;
@@ -289,6 +282,68 @@ void sendToControlConnection( int sock, char* data )
 	}
 	// Free the allocated buffer
 	free( echobuf );
+}
+
+void sendCommandToNethelper( char* command )
+{
+	int cmdlen = strlen( command );
+
+	if ( sendall( nethelperConnection, command, cmdlen, 0 ) != cmdlen )
+	{
+		fprintf( stderr, "Could not send command to the nethelper.\n" );
+		errorExit();
+	}
+
+}
+
+void recieveNethelperErrorCode( int* errorCode, char** data )
+{
+	int readBytes = 0;
+	char buffer;
+	char errorString[1024];
+	char* ecode;
+	char* edata;
+	int errorlen = 0;	
+
+	memset( errorString, 0, 1024 );
+
+	// Read incoming data one character by another until a newline occurs
+	while ( ( readBytes = recv( nethelperConnection, &buffer, 1, 0 ) != 0 ) )
+	{
+		if ( buffer == '\n' )
+		{
+			errorString[errorlen++] = 0;
+			break;
+		}
+		else if ( buffer == ' ' )
+		{
+			errorString[errorlen++] = 0;
+		}
+		else
+		{
+			errorString[errorlen++] = buffer;
+		}
+	}
+
+	if ( readBytes == 0 )
+	{
+		fprintf( stderr, "The nethelper connection died while an error code was expected.\n" );
+		errorExit();
+	}
+
+	// Check if this a real error message
+	if ( strcmp( errorString, "E" ) )
+	{
+		fprintf( stderr, "A errorstring was excepted but something different was recieved.\n" );
+		errorExit();
+	}
+
+	ecode = errorString + strlen( errorString ) + 1;
+	edata = ecode + strlen( ecode ) + 1;
+
+	*errorCode = atoi( ecode );
+	*data = (char*)malloc( strlen( edata ) ); 
+	memcpy( *data, edata, strlen(edata) );
 }
 
 int getSourceIpFromSocket( int sock, struct in_addr* ipaddr )
@@ -315,16 +370,13 @@ int getDestinationIpFromSocket( int sock, struct in_addr* ipaddr )
 	return retval;
 }
 
-int installNetHelper( int controlConnection )
+int installNetHelper()
 {
 	struct in_addr serverip;
 	char port[7];
 	char commandline[1024];
-	char* indata;
-	int inlen;
 	char* outdata;
 	int outlen;
-	int nethelperConnection;
 	struct sockaddr_in kathrein;
 	struct in_addr kathreinip;
 
@@ -340,8 +392,7 @@ int installNetHelper( int controlConnection )
 	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
 	{
 		fprintf( stderr, "The ip address of this system could not be determined.\n" );
-		close( controlConnection );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
 
 	// Get the port as string
@@ -357,25 +408,20 @@ int installNetHelper( int controlConnection )
 	strcat( commandline, "/nethelper" );
 
 	// Send the commandline and start the transfer server
-	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
-	sendToControlConnection( controlConnection, commandline );
+	sendToControlConnection( "cd /tmp; rm -rf nethelper" );
+	waitForControlConnection( 1, COMMANDPROMPT );
+	sendToControlConnection( commandline );
 	
-	if ( transferServer( &serverip, htons( TRANSFERPORT ),  outdata, outlen, &indata, &inlen, 0, 0 ) == -1 )
-	{
-		close( controlConnection );
-		exit( EXIT_FAILURE );
-	}
-	// We are not interested in the recieved data therefore just free it
-	free( indata );
-
+	// Start the transfer server to get the nethelper to the box
+	transferServer( &serverip, htons( TRANSFERPORT ),  outdata, outlen );
+	
 	// The helper has been sent, therefore free its data structure in memory
 	free( outdata );
 	
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
-	sendToControlConnection( controlConnection, "chmod u+x nethelper" );
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
-	sendToControlConnection( controlConnection, "/tmp/nethelper" );
+	waitForControlConnection( 1, COMMANDPROMPT );
+	sendToControlConnection( "chmod u+x nethelper" );
+	waitForControlConnection( 1, COMMANDPROMPT );
+	sendToControlConnection( "/tmp/nethelper" );
 
 	sleep( 2 );
 
@@ -383,16 +429,14 @@ int installNetHelper( int controlConnection )
 	if ( getDestinationIpFromSocket( controlConnection, &kathreinip ) == -1 )
 	{
 		fprintf( stderr, "The ip address of the kathrein could not be determined.\n" );
-		close( controlConnection );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
 
 	// Connect to the nethelper
-	nethelperConnection = socket( AF_INET, SOCK_STREAM, 0 );
-	if ( nethelperConnection == -1 ) 
+	if ( ( nethelperConnection = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 )
 	{
 		perror("Could not create socket for nethelper connection" );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
 
 	// Fill our connection information
@@ -401,41 +445,31 @@ int installNetHelper( int controlConnection )
 	kathrein.sin_port = htons( TRANSFERPORT ); 
 	
 	// Try to connect to the nethelper
-	if ( connect( sock, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
+	if ( connect( nethelperConnection, (struct sockaddr*)&kathrein, sizeof( kathrein ) ) == -1 )
 	{
 		perror( "Could not connect to the nethelper" );
-		close( nethelperConnection );
-		exit( EXIT_FAILURE );
+		errorExit();
 	}
-
-	return nethelperConnection;
 }
 
-void removeNetHelper( int controlConnection, int nethelperConnection )
+void removeNetHelper()
 {
-	char* cmd = "exit\n";
-	int cmdlen = strlen( cmd );
 
 	printf("Removing nethelper from the box.\n");
-	if ( sendall( nethelperConnection, cmd, cmdlen, 0 ) != cmdlen )
-	{
-		fprintf( stderr, "Could not send command to the nethelper.\n" );
-	}
+	sendCommandToNethelper( "exit" );
 	close( nethelperConnection );
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
-	sendToControlConnection( controlConnection, "cd /tmp; rm -rf nethelper" );
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
+	waitForControlConnection( 1, COMMANDPROMPT );
+	sendToControlConnection( "cd /tmp; rm -rf nethelper" );
+	waitForControlConnection( 1, COMMANDPROMPT );
 }
 
-void recieveAndStoreImage( int nethelperConnection, char* image, char* targetpath )
+void recieveAndStoreImage( char* image, char* targetpath )
 {
 	char *mtdblock;
 	char commandline[32];
-	struct in_addr serverip;
-	char port[7];
-	char* indata;
-	int inlen;
-	int allocated;
+
+	int ecode;
+	char *edata;
 
 	// Determine which mtdblock is needed
 	if ( !strcmp( image, "boot" ) )
@@ -471,16 +505,6 @@ void recieveAndStoreImage( int nethelperConnection, char* image, char* targetpat
 		mtdblock = "7";
 	}
 
-	if ( getSourceIpFromSocket( nethelperConnection, &serverip ) == -1 )
-	{
-		fprintf( stderr, "The ip address of this system could not be determined.\n" );
-		close( controlConnection );
-		exit( EXIT_FAILURE );
-	}
-
-	// Get the port as string
-	memset( port, 0, 7 );
-	sprintf( port, "%d", TRANSFERPORT );
 
 	// Construct the needed commandline
 	memset( commandline, 0, 32 );
@@ -491,66 +515,82 @@ void recieveAndStoreImage( int nethelperConnection, char* image, char* targetpat
 	printf( "Transfering %s image...", image );
 
 	// Execute the commandline
-	if ( sendall( nethelperConnection, commandline, strlen( commandline ), 0 ) != strlen( commandline ) )
+	sendCommandToNethelper( commandline );
+	recieveNethelperErrorCode( &ecode, &edata );
+
+	// Handle possible errors
+	switch ( ecode )
 	{
-		printf( "\n" );
-		fprintf( stderr, "Could not send command to the nethelper.\n" );
-		close( nethelperConnection );
-		close( controlConnection );
-		exit( EXIT_FAILURE );
+		case E_COULD_NOT_OPEN_MTDBLOCK:
+			printf( "\n" );
+			fprintf( stderr, "The mtdblock containing the %s image could not be opened.\n", image );
+			errorExit();
+		break;
+		case E_TRANSFERING_MTDBLOCK:
+			{
+				FILE* fp;
+				char* targetfile;
+				char* indata;
+				int inlen;
+				int recievedBytes    = 0;
+				int recievedComplete = 0;
+
+				targetfile = (char*)malloc(strlen(targetpath) + 32);
+				
+				memset( targetfile, 0, strlen(targetpath) + 32 );
+				strcat( targetfile, targetpath );
+				strcat( targetfile, "/" );
+				strcat( targetfile, image );
+				strcat( targetfile, ".img" );
+
+				if( ( fp = fopen( targetfile, "w+" ) ) == 0 )
+				{
+					printf("\n");
+					fprintf( stderr, "The targetfile \"%s\" could not be opened for writing.\n", targetfile );
+					free( targetfile );
+					errorExit();
+				}
+
+				inlen = atoi( edata );
+				indata = (char*)malloc( 32 * 1024 );
+
+				while ( recievedComplete < inlen )
+				{
+					recievedBytes = recv( nethelperConnection, indata, ((inlen - recievedComplete) > 32 * 1024) ? (32 * 1024) : (inlen - recievedComplete), 0 );
+				    if ( recievedBytes == 0 )
+					{
+						printf("\n");
+						fprintf( stderr, "The connection to the nethelper died unexpectedly while fetching image data.\n" );
+						fclose( fp );
+						free( targetfile );
+						free( indata );
+						errorExit();
+					}
+					
+					if ( fwrite( indata, sizeof(char), recievedBytes, fp ) != recievedBytes ) 
+					{
+						printf("\n");
+						fprintf( stderr, "The image could not be written to the targetfile \"%s\".\n", targetfile );
+						fclose( fp );
+						free( targetfile );
+						free( indata );
+						errorExit();
+					}
+
+					recievedComplete += recievedBytes;
+					printf( "\rTransfering %s image... (%i kb / %i kb)", image, recievedComplete/1024, inlen/1024 );
+				}
+
+				free( targetfile );
+				free( indata );
+				fclose( fp );
+				printf( "\rTransfered %s image. (%i kb)                    \n", image, recievedComplete/1024 );
+			}
+		break;
 	}
-
-	// @todo: add code to fetch error string and recieve data
-
-	// Store the image to the hdd
-	{
-		FILE* fp;
-		char* targetfile;
-		
-		targetfile = (char*)malloc(strlen(targetpath) + 32);
-		
-		memset( targetfile, 0, strlen(targetpath) + 32 );
-		strcat( targetfile, targetpath );
-		strcat( targetfile, "/" );
-		strcat( targetfile, image );
-		strcat( targetfile, ".img" );
-
-		if( ( fp = fopen( targetfile, "w+" ) ) == 0 )
-		{
-			printf("\n");
-			fprintf( stderr, "The targetfile \"%s\" could not be opened for writing.\n", targetfile );
-			free( targetfile );
-			close( controlConnection );
-			exit( EXIT_FAILURE );
-		}
-
-		if ( fwrite( indata, sizeof(char), inlen, fp ) != inlen ) 
-		{
-			printf("\n");
-			fprintf( stderr, "The image could not be written to the targetfile \"%s\".\n", targetfile );
-			fclose( fp );
-			free( targetfile );
-			close( controlConnection );
-			exit( EXIT_FAILURE );
-		}
-
-		free( targetfile );
-		fclose( fp );
-	}
-	
-	// Free the indata
-	free( indata );
-	
-	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
-	printf( "\rTransfered %s image. (%i kb)          \n", image, inlen/1024 );
 }
 
-void recieveImageCallback( int bytes, void* data )
-{
-	printf( "\rTransfering %s image... (%i kb)", (char*)data, bytes/1024 );
-}
-
-int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen, char** in, int* inlen, void (*callback)(int, void*), void* data )
+void transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen )
 {
 	int listensock, sock;
 	struct sockaddr_in server;
@@ -560,7 +600,7 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	if ( ( listensock = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 ) 
 	{
 		perror( "Could not create server socket for transfer" );		
-		return -1;
+		errorExit();		
 	}
 
 	server.sin_family      = AF_INET;
@@ -570,14 +610,14 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	{
 		perror( "Could not bind server socket for transfer" );
 		close( listensock );
-		return -1;
+		errorExit();
 	}
 
 	if ( listen( listensock, 1 ) == -1 )
 	{
 		perror( "Could not enter listen state for transfer" );
 		close( listensock );
-		return -1;
+		errorExit();
 	}
 
 	kathreinlen = sizeof( kathrein );
@@ -585,59 +625,31 @@ int transferServer( struct in_addr* serverip, uint32_t port, char* out, int outl
 	{
 		perror( "Could not accept connection for transfer" );
 		close( listensock );
-		return -1;
+		errorExit();
 	}
 
-	// Send all our given data if any
-	if ( outlen > 0 )
+	// Send all our given data
+	if ( sendall( sock, out, outlen, 0 ) != outlen )
 	{
-		if ( sendall( sock, out, outlen, 0 ) != outlen )
-		{
-			fprintf( stderr, "The given data could not be send.\n" );
-			close( listensock );
-			close( sock );
-			return -1;
-		}
+		fprintf( stderr, "The given data could not be send.\n" );
+		close( listensock );
+		close( sock );
+		errorExit();
 	}
 	
-	// Recieve all the given data
+	// Recieve all the given data and just ignore it :)
 	{	
-		int allocated;
-		char databuf[32 * 1024];
-		int recieved = 0;
+		char databuf[1024];
 
-		// Allocate some space for our incoming data
-		*in       = (char*)malloc( 32 * 1024 );
-		allocated = 32 * 1024;
-		*inlen    = 0;
-		
-		while ( ( recieved = recv( sock, databuf, 32 * 1024, 0 ) ) != 0 )
+		while ( recv( sock, databuf, 1024, 0 ) != 0 )
 		{
-			// Reallocation needed?
-			if ( *inlen + recieved > allocated ) 
-			{
-				*in = (char*)realloc( *in, allocated + ( 32 * 1024 ) );
-				allocated += 32 * 1024;
-			}
-
-			// Copy the new data to the buffer
-			memcpy( *in + *inlen, databuf, recieved );
-
-			// Update the amount of recieved data
-			*inlen += recieved;
-
-			// Call the callback if one is defined
-			if ( callback != 0 ) 
-			{
-				callback( *inlen, data );
-			}
+			// Just do nothing :)
 		}
 	}
 
 	// Cleanup
 	close( sock );
 	close( listensock );
-	return 0;
 }
 
 ssize_t sendall( int s , const void * msg , size_t len , int flags )
@@ -656,4 +668,17 @@ ssize_t sendall( int s , const void * msg , size_t len , int flags )
 
 		completed += bytesSend;
 	}
+}
+
+void errorExit()
+{
+	if ( nethelperConnection != 0 )
+	{
+		close( nethelperConnection );
+	}
+	if ( controlConnection != 0 )
+	{
+		close( controlConnection );
+	}
+	exit( EXIT_FAILURE );
 }

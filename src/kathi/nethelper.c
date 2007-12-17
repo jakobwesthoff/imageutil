@@ -125,12 +125,12 @@ int commandLoop( int sock )
 			}
 
 			fseek( fp, 0, SEEK_END );
-			sprintf( mtdsize, "%i", ftell( fp ) + 1 );
+			sprintf( mtdsize, "%i", ftell( fp ) );
 			fseek( fp, 0, SEEK_SET );
 
 			sendErrorResponse( sock, E_TRANSFERING_MTDBLOCK, mtdsize, strlen(mtdsize) );
 
-			buffer = (char*)malloc(32 * 1024);
+			buffer = (char*)malloc( 32 * 1024 );
 			
 			while( ( bytesRead = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
 			{
@@ -144,6 +144,7 @@ int commandLoop( int sock )
 			free( buffer );	
 
 			fclose( fp );
+
 		}
 	}
 }
