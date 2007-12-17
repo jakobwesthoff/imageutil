@@ -15,7 +15,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "nethelper.h"
+#include "nethelper_resource.h"
+
 #include "imageutil.h"
 
 int main( int argc, char** argv ) 
@@ -46,7 +47,7 @@ int main( int argc, char** argv )
 
 	if ( inet_aton( argv[2], &kathreinip ) == 0 )
 	{
-		fprintf(stderr, "The given kathreinip \"%s\" could not be parsed\n", argv[3] );
+		fprintf( stderr, "The given kathreinip \"%s\" could not be parsed\n", argv[2] );
 		exit( EXIT_FAILURE );
 	}
 
@@ -304,8 +305,17 @@ void installNetHelper( int controlConnection )
 	char commandline[1024];
 	char* indata;
 	int inlen;
+	char* outdata;
+	int outlen;
 
 	printf( "Installing nethelper on the box.\n" );
+
+	// Prepare the "fake" http data
+	outdata = (char*)malloc( NETHELPER_DATA_LEN + 512 );
+	memset( outdata, 0, NETHELPER_DATA_LEN + 512 );
+	sprintf( outdata, "HTTP/1.1 200 OK\nContent-Type: application/octet-stream\nContent-Length: %i\n\n", NETHELPER_DATA_LEN );
+	outlen = NETHELPER_DATA_LEN + strlen(outdata);
+	memcpy( outdata + strlen(outdata), NETHELPER_DATA, NETHELPER_DATA_LEN );
 
 	if ( getSourceIpFromSocket( controlConnection, &serverip ) == -1 )
 	{
@@ -331,13 +341,16 @@ void installNetHelper( int controlConnection )
 	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, commandline );
 	
-	if ( transferServer( &serverip, htons( TRANSFERPORT ),  NETHELPER_DATA, NETHELPER_DATA_LEN, &indata, &inlen, 0, 0 ) == -1 )
+	if ( transferServer( &serverip, htons( TRANSFERPORT ),  outdata, outlen, &indata, &inlen, 0, 0 ) == -1 )
 	{
 		close( controlConnection );
 		exit( EXIT_FAILURE );
 	}
 	// We are not interested in the recieved data therefore just free it
 	free( indata );
+
+	// The helper has been sent, therefore free its data structure in memory
+	free( outdata );
 	
 	waitForControlConnection( controlConnection, 1, COMMANDPROMPT );
 	sendToControlConnection( controlConnection, "chmod u+x nethelper" );
