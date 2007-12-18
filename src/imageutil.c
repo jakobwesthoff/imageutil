@@ -510,7 +510,7 @@ void recieveAndStoreImage( char* image, char* targetpath )
 
 	origcrc = atol( edata + strlen(edata) + 1 );
 	
-	// Handle possible errors
+	// Handle possible responses
 	switch ( ecode )
 	{
 		case E_COULD_NOT_OPEN_MTDBLOCK:
@@ -605,8 +605,9 @@ void recieveAndStoreImage( char* image, char* targetpath )
 
 					for( i=0; i<4; i++ )
 					{
-						chksum[i] = (origcrc >> i*8) & 0xff;
+						chksum[i] = ( origcrc >>  i * 8 ) & 0xff;
 					}
+
 					if ( fwrite( chksum, sizeof(char), 4, fp ) != 4 ) 
 					{
 						printf("\n");
@@ -773,3 +774,5 @@ int createHeader( char* image, char** header, int* headerlen )
 	sprintf( *header, "MARU%04i%02i%02i%s", (int)mytime->tm_year + 1900, (int)mytime->tm_mon + 1, (int)mytime->tm_mday, imgname );
 	return 0;
 }
+
+
