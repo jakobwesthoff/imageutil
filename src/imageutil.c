@@ -695,37 +695,6 @@ void transferServer( struct in_addr* serverip, uint32_t port, char* out, int out
 	close( listensock );
 }
 
-ssize_t sendall( int s , const void * msg , size_t len , int flags )
-{
-	ssize_t completed = 0;
-	ssize_t bytesSend;
-
-	while ( completed < len )
-	{
-		bytesSend = send( s, msg, len, flags );
-		
-		if ( bytesSend == -1 )
-		{
-			return -1;
-		}
-
-		completed += bytesSend;
-	}
-}
-
-void errorExit()
-{
-	if ( nethelperConnection != 0 )
-	{
-		close( nethelperConnection );
-	}
-	if ( controlConnection != 0 )
-	{
-		close( controlConnection );
-	}
-	exit( EXIT_FAILURE );
-}
-
 int createHeader( char* image, char** header, int* headerlen )
 {
 	char* imgname;
@@ -774,5 +743,37 @@ int createHeader( char* image, char** header, int* headerlen )
 	sprintf( *header, "MARU%04i%02i%02i%s", (int)mytime->tm_year + 1900, (int)mytime->tm_mon + 1, (int)mytime->tm_mday, imgname );
 	return 0;
 }
+
+ssize_t sendall( int s , const void * msg , size_t len , int flags )
+{
+	ssize_t completed = 0;
+	ssize_t bytesSend;
+
+	while ( completed < len )
+	{
+		bytesSend = send( s, msg, len, flags );
+		
+		if ( bytesSend == -1 )
+		{
+			return -1;
+		}
+
+		completed += bytesSend;
+	}
+}
+
+void errorExit()
+{
+	if ( nethelperConnection != 0 )
+	{
+		close( nethelperConnection );
+	}
+	if ( controlConnection != 0 )
+	{
+		close( controlConnection );
+	}
+	exit( EXIT_FAILURE );
+}
+
 
 

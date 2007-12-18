@@ -22,5 +22,6 @@ int installNetHelper();
 void removeNetHelper();
 void recieveAndStoreImage( char* image, char* targetpath );
 void transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen );
+int createHeader( char* image, char** header, int* headerlen )
 ssize_t sendall( int s , const void * msg , size_t len , int flags );
 void errorExit();
