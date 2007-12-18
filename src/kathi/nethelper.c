@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 
 #include "nethelper.h"
+#include "../crc/crc.h"
 #include "errorcodes.h"
 
 int main( int argc, char** argv )
@@ -106,13 +107,13 @@ int commandLoop( int sock )
 		{
 			char* mtdblock;
 			char mtddevice[256];
-			char mtdsize[128];
+			char mtdsize[256];
 			char* buffer;
-			int bytesRead = 0;
 			FILE* fp;
+			unsigned long crc = ~0L;
 
 			memset( mtddevice, 0, 256 );
-			memset( mtdsize, 0, 128 );
+			memset( mtdsize, 0, 256 );
 
 			mtdblock = command + strlen(command) + 1;
 			
@@ -124,17 +125,23 @@ int commandLoop( int sock )
 				return -1;
 			}
 
-			fseek( fp, 0, SEEK_END );
-			sprintf( mtdsize, "%i", ftell( fp ) );
+			// Allocate read buffer
+			buffer = (char*)malloc( 32 * 1024 );
+
+			// Calculate crc32
+			while( ( readBytes = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
+			{
+				crc = crc32( buffer, readBytes, crc );
+			}
+			
+			sprintf( mtdsize, "%i %i", ftell( fp ), crc ^ ~0L );
 			fseek( fp, 0, SEEK_SET );
 
 			sendErrorResponse( sock, E_TRANSFERING_MTDBLOCK, mtdsize, strlen(mtdsize) );
-
-			buffer = (char*)malloc( 32 * 1024 );
 			
-			while( ( bytesRead = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
+			while( ( readBytes = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
 			{
-				if ( sendall( sock, buffer, bytesRead, 0 ) != bytesRead )
+				if ( sendall( sock, buffer, readBytes, 0 ) != readBytes )
 				{
 					fprintf( stderr, "The data could not be send to the pc.\n" );
 					return -1;

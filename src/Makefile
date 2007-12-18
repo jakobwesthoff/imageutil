@@ -4,15 +4,15 @@ SH4-GCC=/usr/bin/sh4-unknown-linux-gnu-gcc
 .PHONY: all
 all: imageutil
 
-kathi/nethelper: kathi/nethelper.c kathi/nethelper.h
-	${SH4-GCC} kathi/nethelper.c -o kathi/nethelper
+kathi/nethelper: kathi/nethelper.c kathi/nethelper.h crc/crc.c crc/crc.h
+	${SH4-GCC} kathi/nethelper.c crc/crc.c -o kathi/nethelper
 
 nethelper_resource.h: kathi/nethelper
 	@echo Generating nethelper_resource.h
 	@../utils/bin2c kathi/nethelper nethelper_resource NETHELPER_DATA
 
-imageutil: imageutil.c imageutil.h nethelper_resource.h
-	${GCC} imageutil.c -o imageutil
+imageutil: imageutil.c imageutil.h nethelper_resource.h crc/crc.c crc/crc.h
+	${GCC} imageutil.c crc/crc.c -o imageutil
 
 .PHONY: clean
 clean:

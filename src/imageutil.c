@@ -17,6 +17,7 @@
 
 #include "nethelper_resource.h"
 #include "kathi/errorcodes.h"
+#include "crc/crc.h"
 
 #include "imageutil.h"
 
@@ -326,8 +327,8 @@ void recieveNethelperErrorCode( int* errorCode, char** data )
 	edata = ecode + strlen( ecode ) + 1;
 
 	*errorCode = atoi( ecode );
-	*data = (char*)malloc( strlen( edata ) ); 
-	memcpy( *data, edata, strlen(edata) );
+	*data = (char*)malloc( errorlen - 2 - strlen(ecode) - 1 ); 
+	memcpy( *data, edata, errorlen - 2 - strlen(ecode) - 1 );
 }
 
 int getSourceIpFromSocket( int sock, struct in_addr* ipaddr )
@@ -455,6 +456,9 @@ void recieveAndStoreImage( char* image, char* targetpath )
 	int ecode;
 	char *edata;
 
+	unsigned long origcrc;
+	unsigned long recievedcrc = ~0L;
+
 	// Determine which mtdblock is needed
 	if ( !strcmp( image, "boot" ) )
 	{
@@ -489,19 +493,21 @@ void recieveAndStoreImage( char* image, char* targetpath )
 		mtdblock = "7";
 	}
 
-
 	// Construct the needed commandline
 	memset( commandline, 0, 32 );
 	strcat( commandline, "read " );
 	strcat( commandline, mtdblock );
 	strcat( commandline, "\n" );
 
-	printf( "Transfering %s image...", image );
+	printf( "Calculating %s image checksum...", image );
+	fflush( stdout );
 
 	// Execute the commandline
 	sendCommandToNethelper( commandline );
 	recieveNethelperErrorCode( &ecode, &edata );
 
+	origcrc = atol( edata + strlen(edata) + 1 );
+	
 	// Handle possible errors
 	switch ( ecode )
 	{
@@ -561,14 +567,23 @@ void recieveAndStoreImage( char* image, char* targetpath )
 						errorExit();
 					}
 
+					recievedcrc = crc32( indata, recievedBytes, recievedcrc );
+
 					recievedComplete += recievedBytes;
-					printf( "\rTransfering %s image... (%i kb / %i kb)", image, recievedComplete/1024, inlen/1024 );
+					printf( "\rTransfering %s image... (%i kb / %i kb)         ", image, recievedComplete/1024, inlen/1024 );
 				}
 
 				free( targetfile );
 				free( indata );
 				fclose( fp );
 				printf( "\rTransfered %s image. (%i kb)                    \n", image, recievedComplete/1024 );
+
+				recievedcrc = recievedcrc ^ ~0L;
+				if ( recievedcrc != origcrc )
+				{
+					fprintf( stderr, "CRC mismatch the image should have a checksum of 0x%06x but 0x%06x was found.\nA transfer error seems to have occured.\n", origcrc, recievedcrc );
+					errorExit();
+				}
 			}
 		break;
 	}
