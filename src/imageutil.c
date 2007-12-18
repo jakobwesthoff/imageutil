@@ -10,6 +10,8 @@
 
 #include <string.h>
 
+#include <time.h>
+
 /* socket and network stuff */
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -525,6 +527,10 @@ void recieveAndStoreImage( char* image, char* targetpath )
 				int recievedBytes    = 0;
 				int recievedComplete = 0;
 
+				int headerAvailable  = 0;
+				int headerlen;
+				char* header;
+
 				targetfile = (char*)malloc(strlen(targetpath) + 32);
 				
 				memset( targetfile, 0, strlen(targetpath) + 32 );
@@ -539,6 +545,22 @@ void recieveAndStoreImage( char* image, char* targetpath )
 					fprintf( stderr, "The targetfile \"%s\" could not be opened for writing.\n", targetfile );
 					free( targetfile );
 					errorExit();
+				}
+
+				// Try to add the header to the file
+				if ( createHeader( image, &header, &headerlen ) == 0 )
+				{
+					headerAvailable = 1;
+					if ( fwrite( header, sizeof(char), headerlen, fp ) != headerlen )
+					{
+						printf("\n");
+						fprintf( stderr, "The header could not be written to the targetfile \"%s\".\n", targetfile );
+						fclose( fp );
+						free( targetfile );
+						free( header );
+						errorExit();
+					}
+					free( header );
 				}
 
 				inlen = atoi( edata );
@@ -573,8 +595,29 @@ void recieveAndStoreImage( char* image, char* targetpath )
 					printf( "\rTransfering %s image... (%i kb / %i kb)         ", image, recievedComplete/1024, inlen/1024 );
 				}
 
-				free( targetfile );
 				free( indata );
+
+				// Write the checksum if an appropriate header could be created
+				if ( headerAvailable )
+				{
+					char chksum[4];
+					int i;
+
+					for( i=0; i<4; i++ )
+					{
+						chksum[i] = (origcrc >> i*8) & 0xff;
+					}
+					if ( fwrite( chksum, sizeof(char), 4, fp ) != 4 ) 
+					{
+						printf("\n");
+						fprintf( stderr, "The checksum could not be written to the targetfile \"%s\".\n", targetfile );
+						fclose( fp );
+						free( targetfile );
+						errorExit();
+					}
+				}
+
+				free( targetfile );
 				fclose( fp );
 				printf( "\rTransfered %s image. (%i kb)                    \n", image, recievedComplete/1024 );
 
@@ -680,4 +723,53 @@ void errorExit()
 		close( controlConnection );
 	}
 	exit( EXIT_FAILURE );
+}
+
+int createHeader( char* image, char** header, int* headerlen )
+{
+	char* imgname;
+	time_t seconds = time(0);
+	struct tm *mytime = localtime( &seconds );
+
+	*header = malloc( sizeof(char) * 17 );
+	*headerlen = 16;
+	
+
+	if ( !strcmp( image, "boot" ) )
+	{
+		free( *header );
+		*headerlen = 0;
+		return -1;
+	}
+	else if ( !strcmp( image, "kernel" ) )
+	{
+		imgname = ".ker";
+	}
+	else if ( !strcmp( image, "config" ) )
+	{
+		imgname = "conf";
+	}
+	else if ( !strcmp( image, "root" ) )
+	{
+		imgname = "root";
+	}
+	else if ( !strcmp( image, "app" ) )
+	{
+		imgname = ".app";
+	}
+	else if ( !strcmp( image, "emergency" ) )
+	{
+		imgname = ".eme";
+	}
+	else if ( !strcmp( image, "data" ) )
+	{
+		imgname = ".dat";
+	}
+	else if ( !strcmp( image, "bootcfg" ) )
+	{
+		imgname = "btcf";
+	}
+
+	sprintf( *header, "MARU%04i%02i%02i%s", (int)mytime->tm_year + 1900, (int)mytime->tm_mon + 1, (int)mytime->tm_mday, imgname );
+	return 0;
 }
