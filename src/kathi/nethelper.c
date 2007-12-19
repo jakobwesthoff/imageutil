@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fcntl.h>
+
 /* socket and network stuff */
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -10,6 +12,8 @@
 #include "nethelper.h"
 #include "../crc/crc.h"
 #include "errorcodes.h"
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 int main( int argc, char** argv )
 {
@@ -101,6 +105,7 @@ int commandLoop( int sock )
 		// Decide which command was given and what needs to be done
 		if ( !strcasecmp( command, "exit" ) )
 		{
+			setVfdText( "FINISHED" );
 			return EXIT_SUCCESS;
 		}
 		else if ( !strcasecmp( command, "read" ) )
@@ -108,9 +113,12 @@ int commandLoop( int sock )
 			char* mtdblock;
 			char mtddevice[256];
 			char mtdsize[256];
+			int  imtdsize;
 			char* buffer;
 			FILE* fp;
 			unsigned long crc = ~0L;
+			int completed = 0; 
+			char vfdtext[17];
 
 			memset( mtddevice, 0, 256 );
 			memset( mtdsize, 0, 256 );
@@ -128,13 +136,17 @@ int commandLoop( int sock )
 			// Allocate read buffer
 			buffer = (char*)malloc( 32 * 1024 );
 
+			sprintf( vfdtext, "READ %s CRC", mtdblock );
+			setVfdText( vfdtext );
+
 			// Calculate crc32
 			while( ( readBytes = fread( buffer, 1, 32 * 1024, fp ) ) != 0 )
 			{
 				crc = crc32( buffer, readBytes, crc );
 			}
-			
-			sprintf( mtdsize, "%i %i", ftell( fp ), crc ^ ~0L );
+
+			imtdsize = ftell( fp );
+			sprintf( mtdsize, "%i %i", imtdsize, crc ^ ~0L );
 			fseek( fp, 0, SEEK_SET );
 
 			sendErrorResponse( sock, E_TRANSFERING_MTDBLOCK, mtdsize, strlen(mtdsize) );
@@ -146,6 +158,10 @@ int commandLoop( int sock )
 					fprintf( stderr, "The data could not be send to the pc.\n" );
 					return -1;
 				}
+
+				completed += readBytes;
+				sprintf( vfdtext, "READ %s %i", mtdblock, ((completed*100)/imtdsize) );
+				setVfdText( vfdtext );
 			}
 
 			free( buffer );	
@@ -189,4 +205,41 @@ int sendErrorResponse( int sock, int code, char* data, int datalen )
 		fprintf( stderr, "The data could not be send to the pc.\n" );
 		return -1;
 	}
+}
+
+void setVfdText( char* text )
+{
+	struct ioctl_data
+	{
+		unsigned char begin;
+		unsigned char data[64];
+		unsigned char len;
+	}
+	vfddata;
+
+	int fd;
+
+	// Open the device
+	if ( ( fd = open( "/dev/vfd", O_RDWR ) ) == -1 )
+	{
+		fprintf( stderr, "The /dev/vfd device could not be opened.\n" );
+		return;
+	}
+
+	// Clear every char
+	memset( vfddata.data, ' ', 16 );
+
+	// Copy given string to data structure
+	memcpy( vfddata.data, text, MIN( strlen(text), 16) );
+	vfddata.begin = 0;
+	vfddata.len   = 16;
+
+	if ( ioctl( fd, 0xc0425a00, &vfddata ) == -1 )
+	{
+		perror( "Could not use ioctl to set display text" );
+		close( fd );
+		return;
+	}
+
+	close( fd );
 }

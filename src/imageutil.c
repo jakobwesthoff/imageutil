@@ -370,12 +370,12 @@ void sendCommandToNethelper( char* command )
 {
 	int cmdlen = strlen( command );
 
-	if ( sendall( nethelperConnection, command, cmdlen, 0 ) != cmdlen )
+	if ( sendall( nethelperConnection, command, cmdlen, 0 ) != cmdlen
+	|| ( sendall( nethelperConnection, "\n", 1, 0 ) != 1 ) )
 	{
 		fprintf( stderr, "Could not send command to the nethelper.\n" );
 		errorExit();
 	}
-
 }
 
 void recieveNethelperErrorCode( int* errorCode, char** data )
@@ -594,7 +594,6 @@ void recieveAndStoreImage( char* image, char* targetpath )
 	memset( commandline, 0, 32 );
 	strcat( commandline, "read " );
 	strcat( commandline, mtdblock );
-	strcat( commandline, "\n" );
 
 	printf( "Calculating %s image checksum...", image );
 	fflush( stdout );
