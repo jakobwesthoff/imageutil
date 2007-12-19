@@ -9,8 +9,8 @@
 #define TRANSFERPORT 12345
 
 int main( int argc, char** argv );
-int readImages( struct in_addr kathreinip, char* targetpath );
-int writeImages( struct in_addr kathreinip, char* targetpath );
+void readImages( struct in_addr kathreinip, char* targetpath );
+void writeImages( struct in_addr kathreinip, char* targetpath );
 void openControlConnection( struct in_addr ipaddr, char* username, char* password );
 void closeControlConnection();
 int waitForControlConnection( int waitnum, ... );
@@ -22,6 +22,7 @@ int installNetHelper();
 void removeNetHelper();
 void recieveAndStoreImage( char* image, char* targetpath );
 void transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen );
-int createHeader( char* image, char** header, int* headerlen )
+int createHeader( char* image, char** header, int* headerlen );
+int readHeader( FILE* fp, char** mtdblock );
 ssize_t sendall( int s , const void * msg , size_t len , int flags );
 void errorExit();

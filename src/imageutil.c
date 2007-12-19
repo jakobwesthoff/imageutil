@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <dirent.h>
 
 #include <stdarg.h>
 
@@ -88,6 +89,12 @@ int main( int argc, char** argv )
 				fprintf( stderr, "The supplied target path is not a directory.\n" );
 				exit( EXIT_FAILURE );
 			}
+			// Check if the existing target is readable
+			if ( access( argv[3], R_OK ) == -1 )
+			{
+				perror( "The supplied target directory is not readable" );
+				exit( EXIT_FAILURE );
+			}
 			// Check if the existing target is writable
 			if ( access( argv[3], W_OK ) == -1 )
 			{
@@ -102,21 +109,25 @@ int main( int argc, char** argv )
 
 	if ( !strcasecmp( argv[1], "w" ) ) 
 	{
-		return writeImages( kathreinip, targetpath );
+		writeImages( kathreinip, targetpath );
 	}
 	else 
 	{
-		return readImages( kathreinip, targetpath );
+		readImages( kathreinip, targetpath );
 	}
+
+	printf("Everything done.\n");
+	
+	return EXIT_SUCCESS;
 }
 
-int readImages( struct in_addr kathreinip, char* targetpath ) 
+void readImages( struct in_addr kathreinip, char* targetpath ) 
 {
+	// Open control connection and install the nethelper
 	openControlConnection( kathreinip, USERNAME, PASSWORD );
-	
 	installNetHelper();	
 
-	// Now fetch the images one after another
+	// Fetch the images one after another
 	recieveAndStoreImage( "kernel", targetpath );
 	recieveAndStoreImage( "config", targetpath );
 	recieveAndStoreImage( "root", targetpath );
@@ -127,20 +138,104 @@ int readImages( struct in_addr kathreinip, char* targetpath )
 	// Maybe recieve the bootloader stuff, too?
 	recieveAndStoreImage( "boot", targetpath );
 	recieveAndStoreImage( "bootcfg", targetpath );	
-
+	
+	// Remove the nethelper and close the control connection
 	removeNetHelper();
-
 	closeControlConnection();
-
-	printf("Everything done.\n");
-
-	return 0;
 }
 
-int writeImages( struct in_addr kathreinip, char* targetpath )
+void writeImages( struct in_addr kathreinip, char* targetpath )
 {
-	fprintf( stderr, "Sorry image writing is not supported in this pre-alpha release\n" );
-	exit( EXIT_FAILURE );
+	DIR* dir;
+	struct dirent* entry;
+	FILE* fp;
+
+	int imagelistlen = 0;
+	struct imdata
+	{
+		char* pathname;
+		char* filename;
+		char* mtdblock;
+	} imagelist[8];
+
+	printf( "WARNING: Image writing support is highly EXPERIMENTAL\n" );
+
+	// Read all the image headers and create list of flashable images
+	printf( "Reading image headers..." );
+	fflush( stdout );
+	
+	errno = 0;
+	if ( ( dir = opendir( targetpath ) ) == 0 )
+	{
+		printf( "\n" );
+		perror( "Could not open the target directory for reading" );
+		return;
+	}
+
+	while( ( entry = readdir( dir ) ) != 0 )
+	{
+		char* pathname;
+		char* mtdblock;
+
+		if ( !strcmp( entry->d_name, "." ) || !strcmp( entry->d_name, ".." ) )
+		{
+			continue;
+		}
+
+		pathname = malloc( strlen(targetpath) + strlen(entry->d_name) + 2 );
+		sprintf( pathname, "%s/%s", targetpath, entry->d_name );
+		
+		if ( ( fp = fopen( pathname, "r" ) ) == 0 )
+		{
+			printf( "\n" );
+			fprintf( stderr, "Could not open imagefile \"%s\" for reading.\n", entry->d_name );
+			return;
+		}
+
+		if ( readHeader( fp, &mtdblock ) == -1 )
+		{
+			continue;
+		}
+		
+		imagelist[imagelistlen].filename = entry->d_name;
+		imagelist[imagelistlen].pathname = pathname;
+		imagelist[imagelistlen++].mtdblock = mtdblock;
+	}
+
+	if ( errno != 0 )
+	{
+		printf( "\n" );
+		perror( "Could not read target directory contents" );
+	}
+
+	// Output flashing information and warning	
+	{		
+		int i;
+		
+		printf( "\rThe following images will be flashed to the shown mtdblocks:\n" );
+
+		for (i=0; i<imagelistlen; i++)
+		{
+			printf( "File: %s -> mtdblock%s\n", imagelist[i].filename, imagelist[i].mtdblock );
+		}
+				
+		printf( "\n" );
+		printf( "WARNING -   The following process may damage your kathrein severly    - WARNING\n" );
+		printf( "WARNING - The flashing will start in 10 seconds ( Abort with CTRL-C ) - WARNING\n" );
+		fflush( stdout );
+		sleep(10);
+	}
+
+	// @todo: Add flashing procedure
+
+	// Cleanup
+	{
+		int i;
+		for( i=0; i<imagelistlen; i++ )
+		{
+			free( imagelist[i].pathname );
+		}
+	}
 }
 
 void openControlConnection( struct in_addr ipaddr, char* username, char* password )
@@ -741,6 +836,59 @@ int createHeader( char* image, char** header, int* headerlen )
 	}
 
 	sprintf( *header, "MARU%04i%02i%02i%s", (int)mytime->tm_year + 1900, (int)mytime->tm_mon + 1, (int)mytime->tm_mday, imgname );
+	return 0;
+}
+
+int readHeader( FILE* fp, char** mtdblock )
+{
+	char buffer[17]; 
+
+	memset( buffer, 0, 17 );
+	
+	// Read 16 byte header
+	if ( fread( buffer, sizeof(char), 16, fp ) != 16 )
+	{
+		fclose( fp );
+		fprintf( stderr, "Could not read header from image file.\n" );
+		errorExit();
+	}
+
+	// Check if we are really dealing with a correct header
+	if ( buffer[0] != 'M' || buffer[1] != 'A' || buffer[2] != 'R' || buffer[3] != 'U' )
+	{
+		return -1;
+	}
+
+	// Check which image we are dealing with and set the appropriate mtdblock
+	if ( !strcmp( buffer + 12, ".ker" ) )
+	{
+		*mtdblock = "1";
+	}
+	else if ( !strcmp( buffer + 12, "conf" ) )
+	{
+		*mtdblock = "2";
+	}
+	else if ( !strcmp( buffer + 12, "root" ) )
+	{
+		*mtdblock = "3";
+	}
+	else if ( !strcmp( buffer + 12, ".app" ) )
+	{
+		*mtdblock = "4";
+	}
+	else if ( !strcmp( buffer + 12, ".eme" ) )
+	{
+		*mtdblock = "5";
+	}
+	else if ( !strcmp( buffer + 12, ".dat" ) )
+	{
+		*mtdblock = "6";
+	}
+	else if ( !strcmp( buffer + 12, "btcf" ) )
+	{
+		*mtdblock = "7";
+	}
+	
 	return 0;
 }
 
