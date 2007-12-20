@@ -5,7 +5,7 @@ SH4-GCC=/usr/bin/sh4-unknown-linux-gnu-gcc
 all: imageutil
 
 kathi/nethelper: kathi/nethelper.c kathi/nethelper.h crc/crc.c crc/crc.h
-	${SH4-GCC} kathi/nethelper.c crc/crc.c -o kathi/nethelper
+	${SH4-GCC} -Os kathi/nethelper.c crc/crc.c -o kathi/nethelper
 
 nethelper_resource.h: kathi/nethelper
 	@echo Generating nethelper_resource.h

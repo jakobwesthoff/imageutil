@@ -53,12 +53,12 @@ int main( int argc, char** argv )
 		printf( "     Example: ./imageutil w 10.0.1.202 sourcepath\n" );
 		printf( " \n" );
 		printf( "  h: Add header and and checksum to an image.\n" );
-		printf( "     Parameters: [imagetype] [source image] [destinationimage]\n" );
+		printf( "     Parameters: [imagetype] [source image] [destination image]\n" );
 		printf( "     Valid imagetypes: kernel, config, root, app, emergency, data, bootcfg\n" );
 		printf( "     Example: ./imageutil h app image_without_header.img image_with_header.img\n" );
 		printf( "\n" );
 		printf( "  s: Strip header and checksum from image.\n" );
-		printf( "     Parameters: [source image] [destinationimage]\n" );
+		printf( "     Parameters: [source image] [destination image]\n" );
 		printf( "     Example: ./imageutil s image_with_header.img image_without_header.img\n" );
 		exit( EXIT_FAILURE );
 	}
