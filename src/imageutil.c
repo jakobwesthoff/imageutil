@@ -553,8 +553,15 @@ void openControlConnection( struct in_addr ipaddr, char* username, char* passwor
 		waitForControlConnection( 1, "Password:" );
 		// Send the password manually because it is not echoed back
 		sendall( controlConnection, PASSWORD, strlen(PASSWORD), 0 );
-		sendall( controlConnection, "\n", 1, 0 );
-		waitForControlConnection( 1, "# " );
+		sendall( controlConnection, "\n", 1, 0 );		
+		if ( waitForControlConnection( 2, "Login incorrect", "# ") == 0 )
+		{
+			// Login was incorrect try to connect without password
+			sendToControlConnection( USERNAME );
+			waitForControlConnection( 1, "Password:" );
+			sendall( controlConnection, "\n", 1, 0 );		
+			waitForControlConnection( 1, "# " );
+		}
 	}
 	
 	// We are logged in set a new console prompt for identification
