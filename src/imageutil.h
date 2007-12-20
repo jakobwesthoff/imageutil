@@ -11,6 +11,10 @@
 int main( int argc, char** argv );
 void readImages( struct in_addr kathreinip, char* targetpath );
 void writeImages( struct in_addr kathreinip, char* targetpath );
+void stripHeader( char* src, char* target );
+void addHeader( char* header, char* src, char* target );
+int file_exists( char* path );
+void validatePath( char* path );
 void openControlConnection( struct in_addr ipaddr, char* username, char* password );
 void closeControlConnection();
 int waitForControlConnection( int waitnum, ... );

@@ -32,88 +32,128 @@ int main( int argc, char** argv )
 	// Ip address
 	struct in_addr kathreinip;
 
-	// targetpath
-	char* targetpath;
-
 	// Just output the program title
 	printf( "%s %s\n", PROGRAM_TITLE, PROGRAM_VERSION );
-
+	
 	// Check for correct parameter count
-	if ( argc < 3 ) {
+	if ( argc < 4 || ( !strcasecmp( argv[1], "h" ) && argc < 5 ) ) 
+	{
 		// Show usage
-		printf( "Usage: %s ACTION KATHREINIP PATHNAME\n", *argv );
-		printf( "Read or write images from or to the kathrein ufs-910 reciever\n" );
+		printf( "Usage: ./imageutil ACTION <ARGUMENTS ...>\n", *argv );
+		printf( "Everything your ufs910 images need.\n" );
 		printf( "\n" );
-		printf( "Example: %s r 10.0.1.202 target\n", *argv );
-		printf( "  This will read all the images from the box and store them in the target directory\n" );
+		printf( "Possible actions:\n" );
+		printf( "  r: Read all images from the reciever and store them on the pc.\n" );
+		printf( "     Parameters: [kathreinip] [targetpath]\n" );
+		printf( "     Example: ./imageutil r 10.0.1.202 targetpath\n" );
 		printf( "\n" );
-		printf( "An action needs to be specified. It can be either \"r\" for read or \"w\" for write.\n" );
-		printf( "Kathreinip specifies the ip addr of the kathrein reciever.\n" );
-		printf( "Pathname specifies the directory containing the images to read from or write to.\n" );	
+		printf( "  w: Write all images from your pc to the reciever.\n" );
+		printf( "     WARNING: THIS FUNCTION IS HIGHLY EXPERIMENTAL AND MABY DANGEROUS\n" );
+		printf( "     Parameters: [kathreinip] [sourcepath]\n" );
+		printf( "     Example: ./imageutil w 10.0.1.202 sourcepath\n" );
+		printf( " \n" );
+		printf( "  h: Add header and and checksum to an image.\n" );
+		printf( "     Parameters: [imagetype] [source image] [destinationimage]\n" );
+		printf( "     Valid imagetypes: kernel, config, root, app, emergency, data, bootcfg\n" );
+		printf( "     Example: ./imageutil h app image_without_header.img image_with_header.img\n" );
+		printf( "\n" );
+		printf( "  s: Strip header and checksum from image.\n" );
+		printf( "     Parameters: [source image] [destinationimage]\n" );
+		printf( "     Example: ./imageutil s image_with_header.img image_without_header.img\n" );
 		exit( EXIT_FAILURE );
 	}
-
-	if ( inet_aton( argv[2], &kathreinip ) == 0 )
+	
+	// Validate parameters for reading/writing
+	if ( !strcasecmp( argv[1], "r" ) || !strcasecmp( argv[1], "w" ) )
 	{
-		fprintf( stderr, "The given kathreinip \"%s\" could not be parsed\n", argv[2] );
-		exit( EXIT_FAILURE );
-	}
-
-	// Target path validation
-	{
-		// Check if the target path exists
-		struct stat stats;
-		if ( stat( argv[3], &stats ) == -1 )
+		if ( inet_aton( argv[2], &kathreinip ) == 0 )	
 		{
-			if ( errno == ENOENT )
-			{
-				// Create the directory if it does not exist
-				if ( mkdir( argv[3], 0755 ) == -1 )
-				{
-					perror( "The target directory could not be created" );
-					exit( EXIT_FAILURE );
-				}
-			}
-			else
-			{
-				// An error occured during the stats call
-				perror("An error occured during the validation of the target directory");
-				exit( EXIT_FAILURE );
-			}
-		}
-		else
-		{
-			// Check if the existing target is a directory
-			if ( !S_ISDIR( stats.st_mode ) )
-			{
-				fprintf( stderr, "The supplied target path is not a directory.\n" );
-				exit( EXIT_FAILURE );
-			}
-			// Check if the existing target is readable
-			if ( access( argv[3], R_OK ) == -1 )
-			{
-				perror( "The supplied target directory is not readable" );
-				exit( EXIT_FAILURE );
-			}
-			// Check if the existing target is writable
-			if ( access( argv[3], W_OK ) == -1 )
-			{
-				perror( "The supplied target directory is not writable" );
-				exit( EXIT_FAILURE );
-			}
+			fprintf( stderr, "The given kathreinip \"%s\" could not be parsed\n", argv[2] );
+			exit( EXIT_FAILURE );
 		}
 		
-		// The target path should be valid at this point
-		targetpath = argv[3];
+		// Validate the path
+		validatePath( argv[3] );
+	}
+	// Validate parameters for image stripping
+	else if ( !strcasecmp( argv[1], "s" ) )
+	{
+		if ( !file_exists( argv[2] ) )
+		{
+			fprintf( stderr, "The source image file \"%s\" does not exist.\n", argv[2] );
+			exit( EXIT_FAILURE );
+		}
+
+		if ( file_exists( argv[3] ) )
+		{
+			fprintf( stderr, "The destination file \"%s\" does already exist.\n", argv[3] );
+			exit( EXIT_FAILURE );
+		}
+
+		if ( access( argv[2], R_OK ) == -1 )
+		{
+			fprintf( stderr, "The sourcefile \"%s\" is not readable.\n", argv[2] );
+			exit( EXIT_FAILURE );
+		}
+	}
+	// Validate parameters for image header creation
+	else if ( !strcasecmp( argv[1], "h" ) )
+	{
+		// Check imagetype
+		if ( strcasecmp( argv[2], "kernel" ) 
+		  && strcasecmp( argv[2], "config" ) 
+		  && strcasecmp( argv[2], "root" ) 
+		  && strcasecmp( argv[2], "app" ) 
+		  && strcasecmp( argv[2], "emergency" ) 
+		  && strcasecmp( argv[2], "data" ) 
+		  && strcasecmp( argv[2], "bootcfg" ) )
+		{
+			fprintf( stderr, "The supplied image type is invalid.\n" );
+			fprintf( stderr, "Valid types are: kernel, config, root, app, emergency, data, bootcfg.\n" );
+			exit( EXIT_FAILURE );
+		}
+
+		// Check the two imagefiles
+		if ( !file_exists( argv[3] ) )
+		{
+			fprintf( stderr, "The source image file \"%s\" does not exist.\n", argv[3] );
+			exit( EXIT_FAILURE );
+		}
+
+		if ( file_exists( argv[4] ) )
+		{
+			fprintf( stderr, "The destination file \"%s\" does already exist.\n", argv[4] );
+			exit( EXIT_FAILURE );
+		}
+
+		if ( access( argv[3], R_OK ) == -1 )
+		{
+			fprintf( stderr, "The sourcefile \"%s\" is not readable.\n", argv[3] );
+			exit( EXIT_FAILURE );
+		}
 	}
 
 	if ( !strcasecmp( argv[1], "w" ) ) 
 	{
-		writeImages( kathreinip, targetpath );
+		writeImages( kathreinip, argv[3] );
 	}
-	else 
+	else if ( !strcasecmp( argv[1], "r" ) )
 	{
-		readImages( kathreinip, targetpath );
+		readImages( kathreinip, argv[3] );
+	}
+	else if ( !strcasecmp( argv[1], "s" ) )
+	{
+		stripHeader( argv[2], argv[3] );
+	}
+	else if ( !strcasecmp( argv[1], "h" ) )
+	{
+		addHeader( argv[2], argv[3], argv[4] );
+	}
+	else
+	{
+		fprintf( stderr, "Invalid action specified.\n" );
+		fprintf( stderr, "Valid actions are: r, w, s, h\n" );
+		exit( EXIT_FAILURE );
 	}
 
 	printf("Everything done.\n");
@@ -234,6 +274,251 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 		for( i=0; i<imagelistlen; i++ )
 		{
 			free( imagelist[i].pathname );
+		}
+	}
+}
+
+void stripHeader( char* src, char* target )
+{
+	char* mtdblock;
+	FILE* srcfp;
+	FILE* targetfp;
+	char* buffer;
+
+	printf( "Stripping header from \"%s\"...\n", src );
+
+	if ( ( srcfp = fopen( src, "r" ) ) == 0 )
+	{
+		fprintf( stderr, "Could not open source image \"%s\".\n", src );
+		exit( EXIT_FAILURE );
+	}
+
+	// First try to read the header to make sure there is one :)
+	if ( readHeader( srcfp, &mtdblock ) == -1 )
+	{
+		fprintf( stderr, "The given source image does not have a header. Therefore nothing needs to be done.\n" );
+		fclose( srcfp );
+		exit ( EXIT_FAILURE );
+	}
+
+	// Open the targetfile
+	if ( ( targetfp = fopen( target, "w" ) ) == 0 )
+	{
+		fprintf( stderr, "Could not open destination image \"%s\" for writing.\n", target );
+		fclose( targetfp );
+		exit( EXIT_FAILURE );
+	}
+
+	// Allocate buffer memory
+	buffer = (char*)malloc( 32 * 1024 );
+
+	// Get size and copy data
+	{
+		int readBytes = 0;
+		int size = 0;
+		int completed = 16;
+
+		fseek( srcfp, 0, SEEK_END );
+		size = ftell( srcfp );
+		fseek( srcfp, 16, SEEK_SET );
+
+		while( (readBytes = fread( buffer, sizeof(char), 32 * 1024, srcfp ) ) != 0 )
+		{
+			completed += readBytes;
+			if ( completed == size )
+			{
+				// Skip the last 4 bytes (Checksum)
+				if ( fwrite( buffer, sizeof(char), readBytes - 4, targetfp ) != readBytes - 4 )
+				{
+					fprintf( stderr, "The target file could not be written correctly.\n" );
+					fclose( targetfp );
+					fclose( srcfp );
+					free( buffer );
+					exit( EXIT_FAILURE );
+				}
+			}
+			else
+			{
+				if ( fwrite( buffer, sizeof(char), readBytes, targetfp ) != readBytes )
+				{
+					fprintf( stderr, "The target file could not be written correctly.\n" );
+					fclose( targetfp );
+					fclose( srcfp );
+					free( buffer );
+					exit( EXIT_FAILURE );
+				}
+			}
+		}
+
+		free( buffer );		
+	}
+
+	fclose( srcfp );
+	fclose( targetfp );
+
+	printf( "The stripped image was written to \"%s\".\n", target );
+}
+
+void addHeader( char* type, char* src, char* target )
+{
+	char* header;
+	int headerlen;
+	char* mtdblock;
+	FILE* srcfp;
+	FILE* targetfp;
+	char* buffer;
+	long crc = ~0L;
+
+	printf( "Adding \"%s\" header to \"%s\"...\n", type, src );
+
+	if ( ( srcfp = fopen( src, "r" ) ) == 0 )
+	{
+		fprintf( stderr, "Could not open source image \"%s\".\n", src );
+		exit( EXIT_FAILURE );
+	}
+
+	// First try to read the header to make sure there isn't one :)
+	if ( readHeader( srcfp, &mtdblock ) != -1 )
+	{
+		fprintf( stderr, "The given source image already has a header. Therefore nothing needs to be done.\n" );
+		fclose( srcfp );
+		exit ( EXIT_FAILURE );
+	}
+	fseek( srcfp, 0, SEEK_SET );
+
+	// Open the targetfile
+	if ( ( targetfp = fopen( target, "w" ) ) == 0 )
+	{
+		fprintf( stderr, "Could not open destination image \"%s\" for writing.\n", target );
+		fclose( targetfp );
+		exit( EXIT_FAILURE );
+	}
+
+	// Create header data
+	createHeader( type, &header, &headerlen );
+
+	// Write the header to the file
+	if ( fwrite( header, sizeof(char), headerlen, targetfp ) != headerlen )
+	{
+		fprintf( stderr, "The header could not be written to the target file.\n" );
+		free( header );
+		fclose( srcfp );
+		fclose( targetfp );
+		exit( EXIT_FAILURE );
+	}
+	
+	free( header );
+
+	// Allocate buffer memory
+	buffer = (char*)malloc( 32 * 1024 );
+
+	// Create crc and copy data
+	{
+		int readBytes = 0;
+
+		while( (readBytes = fread( buffer, sizeof(char), 32 * 1024, srcfp ) ) != 0 )
+		{
+			crc = crc32( buffer, readBytes, crc );
+
+			if ( fwrite( buffer, sizeof(char), readBytes, targetfp ) != readBytes )
+			{
+				fprintf( stderr, "The target file could not be written correctly.\n" );
+				fclose( targetfp );
+				fclose( srcfp );
+				free( buffer );
+				exit( EXIT_FAILURE );
+			}
+		}
+
+		free( buffer );		
+	}
+
+	// Write the checksum to the file
+	{
+		char chksum[4];
+		int i;
+
+		crc = crc ^ ~0L;
+
+		for( i=0; i<4; i++ )
+		{
+			chksum[i] = ( crc >>  i * 8 ) & 0xff;
+		}
+
+		if ( fwrite( chksum, sizeof(char), 4, targetfp ) != 4 ) 
+		{
+			fprintf( stderr, "The checksum could not be written to the targetfile \"%s\".\n", target );
+			fclose( srcfp );
+			fclose( targetfp );
+			exit( EXIT_FAILURE );
+		}
+	}
+
+	fclose( srcfp );
+	fclose( targetfp );
+
+	printf( "The new file with header was written to \"%s\".\n", target );	
+}
+
+int file_exists( char* path )
+{
+	struct stat stats;
+	
+	if ( stat( path, &stats ) == -1 )
+	{
+		if ( errno == ENOENT )
+		{
+			return 0;
+		}
+		else
+		{
+			// An error occured during the stats call
+			perror("An error occured during the validation of the target directory");
+			exit( EXIT_FAILURE );
+		}
+	}
+	return 1;
+}
+
+void validatePath( char* path )
+{
+	struct stat stats;
+	
+	// Check if the target path exists
+	if ( !file_exists( path ) )
+	{
+		// Create the directory if it does not exist
+		if ( mkdir( path, 0755 ) == -1 )
+		{
+			perror( "The target directory could not be created" );
+			exit( EXIT_FAILURE );
+		}
+	}
+	else
+	{
+		if ( stat( path, &stats ) == -1 )
+		{
+			// An error occured during the stats call
+			perror("An error occured during the validation of the target directory");
+			exit( EXIT_FAILURE );
+		}
+		// Check if the existing target is a directory
+		if ( !S_ISDIR( stats.st_mode ) )
+		{
+			fprintf( stderr, "The supplied target path is not a directory.\n" );
+			exit( EXIT_FAILURE );
+		}
+		// Check if the existing target is readable
+		if ( access( path, R_OK ) == -1 )
+		{
+			perror( "The supplied target directory is not readable" );
+			exit( EXIT_FAILURE );
+		}
+		// Check if the existing target is writable
+		if ( access( path, W_OK ) == -1 )
+		{
+			perror( "The supplied target directory is not writable" );
+			exit( EXIT_FAILURE );
 		}
 	}
 }
@@ -858,6 +1143,9 @@ int readHeader( FILE* fp, char** mtdblock )
 		return -1;
 	}
 
+	// Allocate mtdblock space
+	*mtdblock = (char*)malloc(2);
+
 	// Check which image we are dealing with and set the appropriate mtdblock
 	if ( !strcmp( buffer + 12, ".ker" ) )
 	{
@@ -921,6 +1209,5 @@ void errorExit()
 	}
 	exit( EXIT_FAILURE );
 }
-
 
 
