@@ -8,9 +8,18 @@
 
 #define TRANSFERPORT 12345
 
+struct imagefile
+{
+	char* pathname;
+	char* filename;
+	char* mtdblock;
+	FILE* fp;
+};
+
 int main( int argc, char** argv );
 void readImages( struct in_addr kathreinip, char* targetpath );
 void writeImages( struct in_addr kathreinip, char* targetpath );
+void sendAndWriteImage( struct imagefile* image );
 void stripHeader( char* src, char* target );
 void addHeader( char* header, char* src, char* target );
 int file_exists( char* path );
@@ -20,6 +29,7 @@ void closeControlConnection();
 int waitForControlConnection( int waitnum, ... );
 void sendToControlConnection( char* data );
 void sendCommandToNethelper( char* command );
+void recieveNethelperErrorCode( int* errorCode, char** data );
 int getSourceIpFromSocket( int sock, struct in_addr* ipaddr );
 int getDestinationIpFromSocket( int sock, struct in_addr* ipaddr );
 int installNetHelper();

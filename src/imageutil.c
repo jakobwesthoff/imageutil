@@ -191,12 +191,7 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 	FILE* fp;
 
 	int imagelistlen = 0;
-	struct imdata
-	{
-		char* pathname;
-		char* filename;
-		char* mtdblock;
-	} imagelist[8];
+	struct imagefile imagelist[8];
 
 	printf( "WARNING: Image writing support is highly EXPERIMENTAL\n" );
 
@@ -234,13 +229,18 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 
 		if ( readHeader( fp, &mtdblock ) == -1 )
 		{
+			fclose(fp);
 			continue;
 		}
 		
 		imagelist[imagelistlen].filename = entry->d_name;
 		imagelist[imagelistlen].pathname = pathname;
 		imagelist[imagelistlen++].mtdblock = mtdblock;
+
+		fclose(fp);
 	}
+
+	//closedir(dir);
 
 	if ( errno != 0 )
 	{
@@ -266,7 +266,22 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 		sleep(10);
 	}
 
-	// @todo: Add flashing procedure
+	{
+		int i;
+
+		// Open control connection and install the nethelper
+		openControlConnection( kathreinip, USERNAME, PASSWORD );
+		installNetHelper();	
+
+		for( i=0; i<imagelistlen; i++ )
+		{
+			sendAndWriteImage( imagelist + i );
+		}
+
+		// Remove the nethelper and close the control connection
+		removeNetHelper();
+		closeControlConnection();
+	}
 
 	// Cleanup
 	{
@@ -276,6 +291,130 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 			free( imagelist[i].pathname );
 		}
 	}
+}
+
+void sendAndWriteImage( struct imagefile* image )
+{
+	int ecode;
+	char* edata;
+	char command[256];
+	int size = 0;
+	int mtdsize = 0;
+	int readBytes = 0;
+	int completed = 0;
+	char* buffer;
+	FILE* fp;
+
+	printf( "Erasing mtdblock %s...", image->mtdblock );
+	fflush( stdout );
+
+	sprintf( command, "ERASE %s", image->mtdblock );
+	sendCommandToNethelper( command );
+	
+//	printf("DEBUG: waiting for COMMAND UNDERSTOOD\n");
+
+	// Check for a command understood code
+	recieveNethelperErrorCode( &ecode, &edata ); 
+	if ( ecode != E_ERASING_MTDBLOCK )
+	{
+		printf("\n");
+		fprintf( stderr, "An unknown error occured during the initialization of the erasing process.\n" );
+		errorExit();
+	}
+
+//	printf("DEBUG: waiting for ERASED MTDBLOCK\n");
+	recieveNethelperErrorCode( &ecode, &edata );
+	// Handle the errors that might have come up during the erasing procedure
+	if ( ecode == E_COULD_NOT_OPEN_MTDBLOCK )
+	{
+		printf("\n");
+		fprintf( stderr, "Could not open mtdblock for erasing.\n" );
+		errorExit();
+	}
+	else if ( ecode == E_COULD_NOT_GET_MTDINFO )
+	{
+		printf("\n");
+		fprintf( stderr, "Could not retrieve information about the mtdblock.\n" );
+		errorExit();
+	}
+	else if ( ecode == E_ERASING_MTDBLOCK_FAILED )
+	{
+		printf("\n");
+		fprintf( stderr, "Could not erase the mtdblock.\n" );
+		errorExit();
+	}
+	
+	// Store the given mtdsize for size checking
+	mtdsize = atoi( edata );
+	
+	// Open the image file for reading
+	if ( ( fp = fopen( image->pathname, "r" ) ) == 0 )
+	{
+		printf("\n");
+		fprintf( stderr, "Could not open image \"%s\" for reading.\n", image->filename );
+		errorExit();
+	}
+
+	// Get the size of the image to flash
+//	printf("DEBUG: seeking\n");
+
+	fseek( fp, 0, SEEK_END );
+	
+	size = ftell( fp ) - 20;
+
+	// Check for image size mtd size compatability
+	if ( size > mtdsize )
+	{
+		printf("\n");
+		fprintf( stderr, "The given image \"%s\" is bigger than the mtddevice. ( image: %i bytes, mtddevice: %i bytes )\n", size, mtdsize );
+		errorExit();
+	}
+	
+	sprintf( command, "WRITE %s %i", image->mtdblock, size );
+
+	fseek ( fp, 16, SEEK_SET );
+
+	// Send the writing command and wait for the response to send the data
+	sendCommandToNethelper( command );
+	recieveNethelperErrorCode( &ecode, &edata );
+	if ( ecode != E_READY_TO_WRITE_MTDBLOCK )
+	{
+		printf("\n");
+		fprintf( stderr, "The writing process could not be initiated.\n" );
+		errorExit();
+	}
+
+	// Malloc our reading buffer
+	buffer = (char*) malloc( 32*1024 );
+
+	// Send the image to the box
+	while ( completed < size )
+	{
+//		printf("DEBUG: reading\n");
+		if ( ( readBytes = fread( buffer, 1, ((size-completed)>32*1024)?(32*1024):(size-completed), fp ) ) == 0 )
+		{
+			printf("\n");
+			fprintf( stderr, "The image file could not be read.\n" );
+			errorExit();
+		}
+
+//		printf("DEBUG: Sending data: %i\n", readBytes);
+		sendall( nethelperConnection, buffer, readBytes, 0 );
+
+		completed += readBytes;
+
+		printf("\rWriting image \"%s\" (%i kb / %i kb )...         ", image->filename, completed/1024, size/1024 );
+		fflush( stdout );
+	}
+
+	free( buffer );
+
+	fclose( fp );
+	
+	recieveNethelperErrorCode( &ecode, &edata );
+	//@todo: verify crc32
+	
+	printf("\rImage \"%s\" written.                                 \n", image->filename );
 }
 
 void stripHeader( char* src, char* target )
@@ -979,6 +1118,7 @@ void recieveAndStoreImage( char* image, char* targetpath )
 
 					recievedComplete += recievedBytes;
 					printf( "\rTransfering %s image... (%i kb / %i kb)         ", image, recievedComplete/1024, inlen/1024 );
+					fflush( stdout );
 				}
 
 				free( indata );
@@ -1018,6 +1158,8 @@ void recieveAndStoreImage( char* image, char* targetpath )
 		break;
 	}
 }
+
+
 
 void transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen )
 {

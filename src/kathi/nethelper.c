@@ -3,11 +3,15 @@
 #include <string.h>
 
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
 /* socket and network stuff */
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+
+/* Mtd stuff */
+#include "mtd/mtd-user.h"
 
 #include "nethelper.h"
 #include "../crc/crc.h"
@@ -15,9 +19,11 @@
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+int sock; 
+
 int main( int argc, char** argv )
 {
-	int listensock, sock;
+	int listensock;
 	struct sockaddr_in server;
 	struct sockaddr_in client;
 	int clientlen;
@@ -54,7 +60,7 @@ int main( int argc, char** argv )
 	}
 
 	// Handle the commands
-	if ( commandLoop( sock ) == -1)
+	if ( commandLoop() == -1)
 	{
 		close( sock );
 		close( listensock );
@@ -67,7 +73,7 @@ int main( int argc, char** argv )
 	return EXIT_SUCCESS;
 }
 
-int commandLoop( int sock )
+int commandLoop()
 {
 	while ( 1 )
 	{
@@ -169,6 +175,97 @@ int commandLoop( int sock )
 			fclose( fp );
 
 		}
+		else if ( !strcasecmp( command, "erase" ) )
+		{
+			char* mtdblock;
+			int imtdsize;
+			char mtdsize[256];
+
+			mtdblock = command + strlen(command) + 1;
+			sendErrorResponse( sock, E_ERASING_MTDBLOCK, 0, 0 );
+			imtdsize = eraseMtdDevice( mtdblock );
+			sprintf( mtdsize, "%i", imtdsize );
+			sendErrorResponse( sock, E_ERASED_MTDBLOCK, mtdsize, strlen( mtdsize ) );
+		}
+		else if ( !strcasecmp( command, "write" ) )
+		{
+			char* mtdblock;
+			char* mtdsize;
+			char mtddevice[256];
+			int  imtdsize;
+			char* buffer;
+			FILE* fp;
+			unsigned long crc = ~0L;
+			char writtencrc[32];
+			int completed = 0; 
+			char vfdtext[17];
+
+//			printf("DEBUG: WRITE\n");
+
+			memset( mtddevice, 0, 256 );
+
+			mtdblock = command + strlen(command) + 1;
+			mtdsize = mtdblock + strlen(mtdblock) + 1;
+			
+	
+			imtdsize = atoi( mtdsize );
+			
+			sprintf( mtddevice, "/dev/mtd%s", mtdblock );
+
+//			printf("DEBUG: mtdblock: %s, mtdevice: %s\n", mtdblock, mtddevice );
+//			printf("DEBUG: mtdsize: %s, imtdsize: %i\n", mtdsize, imtdsize );
+
+			if ( ( fp = fopen( mtddevice, "w" ) ) == 0 )
+			{
+				sendErrorResponse( sock, E_COULD_NOT_OPEN_MTDBLOCK, 0, 0 );
+				return -1;
+			}
+
+			sendErrorResponse( sock, E_READY_TO_WRITE_MTDBLOCK, 0, 0 );
+
+			buffer = (char*)malloc(32*1024);
+
+//			printf( "DEBUG: awaiting data\n" );
+
+			while( completed < imtdsize )
+			{
+//				printf("DEBUG: recieving\n");
+				readBytes = recv( sock, buffer, ( ((imtdsize - completed) > 32 * 1024) ? (32*1024) : (imtdsize - completed) ), 0 );
+				if ( readBytes == 0 ) 
+				{
+					fprintf( stderr, "The connection to the image server died unexpectedbly while fetching image data.\n" );
+					fclose( fp );
+					free( buffer );
+					close( sock );
+					return -1;
+				}
+
+//				printf("DEBUG: writing\n");
+				if ( fwrite( buffer, sizeof(char), readBytes, fp ) != readBytes ) 
+				{
+					fprintf( stderr, "The image could not be written to the mtd device \"%s\".\n", mtddevice );
+					fclose( fp );
+					free( buffer );
+					close( sock );
+					return -1;
+				}
+					
+//				printf("DEBUG: crc\n");
+				crc = crc32( buffer, readBytes, crc );
+
+				completed += readBytes;
+//				printf("DEBUG: completed: %i\n", completed);
+				sprintf( vfdtext, "WRITE %s %i", mtdblock, ((completed*100)/imtdsize) );
+				setVfdText( vfdtext );
+			}
+
+			fclose( fp );
+			free( buffer );
+
+			memset(writtencrc, 0, 32 );
+			sprintf( writtencrc, "%i", crc ^ ~0L );
+			sendErrorResponse( sock, E_WRITTEN_MTDBLOCK, writtencrc, strlen(writtencrc) );
+		}
 	}
 }
 
@@ -242,4 +339,54 @@ void setVfdText( char* text )
 	}
 
 	close( fd );
+}
+
+int eraseMtdDevice( char* mtdblock )
+{
+    int fd;
+    mtd_info_t mtdinfo;
+    erase_info_t eraseinfo;
+	char mtddevice[256];
+	char vfdtext[17];
+
+	sprintf( mtddevice, "/dev/mtd%s", mtdblock );
+
+//	printf( "DEBUG: opening mtddevice: %s\n", mtddevice );
+	// Open the mtdblock
+	if ( ( fd = open( mtddevice, O_RDWR ) ) < 0 )
+	{
+		sendErrorResponse( sock, E_COULD_NOT_OPEN_MTDBLOCK, 0, 0 );
+		close( sock );
+		exit( EXIT_FAILURE );
+	}
+//	printf( "DEBUG: mtddevice opened\n" );
+	
+//	printf( "DEBUG: retrieve mtdinfo\n" );
+	// Retrieve some info about our mtddevice	
+	if( ioctl( fd, MEMGETINFO, &mtdinfo ) != 0 ) {
+		sendErrorResponse( sock, E_COULD_NOT_GET_MTDINFO, 0, 0 );
+		exit( EXIT_FAILURE );
+	}
+//	printf( "DEBUG: mtdsize: %i\n", mtdinfo.size );
+
+	// Erase the rom block by block
+	eraseinfo.length = mtdinfo.erasesize;
+	for ( eraseinfo.start = 0; eraseinfo.start < mtdinfo.size; eraseinfo.start += mtdinfo.erasesize ) {
+		// Update the status text on the display
+		sprintf( vfdtext, "ERASE %s %i", mtdblock, ((eraseinfo.start*100)/mtdinfo.size) );
+		setVfdText( vfdtext );
+
+		// Erase the current block
+		if( ioctl( fd, MEMERASE, &eraseinfo ) != 0 )
+		{
+			sprintf( vfdtext, "ERROR" );
+			setVfdText( vfdtext );
+			sendErrorResponse( sock, E_ERASING_MTDBLOCK_FAILED, 0, 0 );
+			exit( EXIT_FAILURE );
+		}
+	}
+
+	close( fd );
+
+	return mtdinfo.size;
 }
