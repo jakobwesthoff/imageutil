@@ -10,6 +10,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+/* Reboot stuff */
+#include <unistd.h>
+#include <linux/reboot.h>
+
 /* Mtd stuff */
 #include "mtd/mtd-user.h"
 
@@ -112,6 +116,22 @@ int commandLoop()
 		if ( !strcasecmp( command, "exit" ) )
 		{
 			setVfdText( "FINISHED" );
+			return EXIT_SUCCESS;
+		}
+		else if ( !strcasecmp( command, "reboot" ) )
+		{
+			pid_t pid;
+			
+			// Fork because the connection maybe terminated during the command execution
+			pid = fork();
+			if ( pid == 0 ) // Child
+			{
+				setVfdText( "REBOOTING" );
+				sleep(1);
+				sync();
+				sleep(1);
+				reboot( LINUX_REBOOT_CMD_RESTART );
+			}
 			return EXIT_SUCCESS;
 		}
 		else if ( !strcasecmp( command, "read" ) )

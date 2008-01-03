@@ -277,10 +277,16 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 		{
 			sendAndWriteImage( imagelist + i );
 		}
+		
+		printf( "Trying to reboot the ufs.\nIf this fails please reboot manually by using the on/off switch on the back.\n" );
 
-		// Remove the nethelper and close the control connection
-		removeNetHelper();
+		// Try to reboot the box
+		sendCommandToNethelper( "REBOOT" );
+		sleep(2);
+
+		// Close the control connection
 		closeControlConnection();
+
 	}
 
 	// Cleanup
@@ -415,6 +421,7 @@ void sendAndWriteImage( struct imagefile* image )
 	//@todo: verify crc32
 	
 	printf("\rImage \"%s\" written.                                 \n", image->filename );
+	fflush( stdout );
 }
 
 void stripHeader( char* src, char* target )
