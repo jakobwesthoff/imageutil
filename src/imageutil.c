@@ -33,7 +33,7 @@ int main( int argc, char** argv )
 	struct in_addr kathreinip;
 
 	// Just output the program title
-	printf( "%s %s\n", PROGRAM_TITLE, PROGRAM_VERSION );
+	printf( "%s %s\n%s\n", PROGRAM_TITLE, PROGRAM_VERSION, PROGRAM_COPYRIGHT );
 	
 	// Check for correct parameter count
 	if ( argc < 4 || ( !strcasecmp( argv[1], "h" ) && argc < 5 ) ) 

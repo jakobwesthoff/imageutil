@@ -1,5 +1,6 @@
 #define PROGRAM_TITLE "Kathrein UFS-910 Image Utillity"
-#define PROGRAM_VERSION "- PRE-ALPHA VERSION NOT FOR DISTRIBUTION -"
+#define PROGRAM_VERSION "v. 0.8"
+#define PROGRAM_COPYRIGHT "(c) Jakob Westhoff <jakob@westhoffswelt.de>"
 
 #define USERNAME "root"
 #define PASSWORD "kathrein"
