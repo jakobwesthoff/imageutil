@@ -43,16 +43,16 @@ int main( int argc, char** argv )
 		printf( "Everything your ufs910 images need.\n" );
 		printf( "\n" );
 		printf( "Possible actions:\n" );
-		printf( "  r: Read all images from the reciever and store them on the pc.\n" );
+		printf( "  r: Read all images from the receiver and store them on the pc.\n" );
 		printf( "     Parameters: [kathreinip] [targetpath]\n" );
 		printf( "     Example: ./imageutil r 10.0.1.202 targetpath\n" );
 		printf( "\n" );
-		printf( "  w: Write all images from your pc to the reciever.\n" );
-		printf( "     WARNING: THIS FUNCTION IS HIGHLY EXPERIMENTAL AND MABY DANGEROUS\n" );
+		printf( "  w: Write all images from your pc to the receiver.\n" );
+		printf( "     WARNING: THIS FUNCTION IS HIGHLY EXPERIMENTAL AND MAYBE DANGEROUS\n" );
 		printf( "     Parameters: [kathreinip] [sourcepath]\n" );
 		printf( "     Example: ./imageutil w 10.0.1.202 sourcepath\n" );
 		printf( " \n" );
-		printf( "  h: Add header and and checksum to an image.\n" );
+		printf( "  h: Add header and checksum to an image.\n" );
 		printf( "     Parameters: [imagetype] [source image] [destination image]\n" );
 		printf( "     Valid imagetypes: kernel, config, root, app, emergency, data, bootcfg\n" );
 		printf( "     Example: ./imageutil h app image_without_header.img image_with_header.img\n" );
@@ -692,7 +692,7 @@ void openControlConnection( struct in_addr ipaddr, char* username, char* passwor
 		errorExit();
 	}
 
-	// Login to the recievers telnet session
+	// Login to the receivers telnet session
 	if ( waitForControlConnection( 2, "login:", "# " ) == 0 )
 	{
 		sendToControlConnection( USERNAME );
@@ -771,7 +771,7 @@ int waitForControlConnection( int waitnum, ... )
 
 	// The connection terminated while we were waiting for a string
 	// This should not happen, therefore bail out
-	fprintf( stderr, "The control connection to the kathrein reciever terminated unexpectedly.\n" );
+	fprintf( stderr, "The control connection to the kathrein receiver terminated unexpectedly.\n" );
 	errorExit();
 }
 
@@ -794,7 +794,7 @@ void sendToControlConnection( char* data )
 		// Something went wrong
 		if ( recvBytes == 0 )
 		{
-			fprintf( stderr, "The control connection to the kathrein reciever terminated unexpectedly.\n" );
+			fprintf( stderr, "The control connection to the kathrein receiver terminated unexpectedly.\n" );
 			errorExit();
 		}
 
