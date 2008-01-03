@@ -193,7 +193,7 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 	int imagelistlen = 0;
 	struct imagefile imagelist[8];
 
-	printf( "WARNING: Image writing support is highly EXPERIMENTAL\n" );
+	printf( "\n\033[31;5;1mWARNING:\033[39;49;0m Image writing support is highly EXPERIMENTAL\n\n" );
 
 	// Read all the image headers and create list of flashable images
 	printf( "Reading image headers..." );
@@ -260,8 +260,8 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 		}
 				
 		printf( "\n" );
-		printf( "WARNING -   The following process may damage your kathrein severly    - WARNING\n" );
-		printf( "WARNING - The flashing will start in 10 seconds ( Abort with CTRL-C ) - WARNING\n" );
+		printf( "\n\033[31;5;1mWARNING\033[39;49;0m -   The following process may damage your kathrein severly    - \033[31;5;1mWARNING\033[39;49;0m\n" );
+		printf( "\033[31;5;1mWARNING\033[39;49;0m - The flashing will start in 10 seconds ( Abort with CTRL-C ) - \033[31;5;1mWARNING\033[39;49;0m\n" );
 		fflush( stdout );
 		sleep(10);
 	}
