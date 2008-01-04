@@ -220,8 +220,6 @@ int commandLoop()
 			int completed = 0; 
 			char vfdtext[17];
 
-//			printf("DEBUG: WRITE\n");
-
 			memset( mtddevice, 0, 256 );
 
 			mtdblock = command + strlen(command) + 1;
@@ -231,9 +229,6 @@ int commandLoop()
 			imtdsize = atoi( mtdsize );
 			
 			sprintf( mtddevice, "/dev/mtd%s", mtdblock );
-
-//			printf("DEBUG: mtdblock: %s, mtdevice: %s\n", mtdblock, mtddevice );
-//			printf("DEBUG: mtdsize: %s, imtdsize: %i\n", mtdsize, imtdsize );
 
 			if ( ( fp = fopen( mtddevice, "w" ) ) == 0 )
 			{
@@ -245,11 +240,8 @@ int commandLoop()
 
 			buffer = (char*)malloc(32*1024);
 
-//			printf( "DEBUG: awaiting data\n" );
-
 			while( completed < imtdsize )
 			{
-//				printf("DEBUG: recieving\n");
 				readBytes = recv( sock, buffer, ( ((imtdsize - completed) > 32 * 1024) ? (32*1024) : (imtdsize - completed) ), 0 );
 				if ( readBytes == 0 ) 
 				{
@@ -260,7 +252,6 @@ int commandLoop()
 					return -1;
 				}
 
-//				printf("DEBUG: writing\n");
 				if ( fwrite( buffer, sizeof(char), readBytes, fp ) != readBytes ) 
 				{
 					fprintf( stderr, "The image could not be written to the mtd device \"%s\".\n", mtddevice );
@@ -270,11 +261,9 @@ int commandLoop()
 					return -1;
 				}
 					
-//				printf("DEBUG: crc\n");
 				crc = crc32( buffer, readBytes, crc );
 
 				completed += readBytes;
-//				printf("DEBUG: completed: %i\n", completed);
 				sprintf( vfdtext, "WRITE %s %i", mtdblock, ((completed*100)/imtdsize) );
 				setVfdText( vfdtext );
 			}
@@ -371,7 +360,6 @@ int eraseMtdDevice( char* mtdblock )
 
 	sprintf( mtddevice, "/dev/mtd%s", mtdblock );
 
-//	printf( "DEBUG: opening mtddevice: %s\n", mtddevice );
 	// Open the mtdblock
 	if ( ( fd = open( mtddevice, O_RDWR ) ) < 0 )
 	{
@@ -379,15 +367,12 @@ int eraseMtdDevice( char* mtdblock )
 		close( sock );
 		exit( EXIT_FAILURE );
 	}
-//	printf( "DEBUG: mtddevice opened\n" );
 	
-//	printf( "DEBUG: retrieve mtdinfo\n" );
 	// Retrieve some info about our mtddevice	
 	if( ioctl( fd, MEMGETINFO, &mtdinfo ) != 0 ) {
 		sendErrorResponse( sock, E_COULD_NOT_GET_MTDINFO, 0, 0 );
 		exit( EXIT_FAILURE );
 	}
-//	printf( "DEBUG: mtdsize: %i\n", mtdinfo.size );
 
 	// Erase the rom block by block
 	eraseinfo.length = mtdinfo.erasesize;

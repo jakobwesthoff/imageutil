@@ -317,8 +317,6 @@ void sendAndWriteImage( struct imagefile* image )
 	sprintf( command, "ERASE %s", image->mtdblock );
 	sendCommandToNethelper( command );
 	
-//	printf("DEBUG: waiting for COMMAND UNDERSTOOD\n");
-
 	// Check for a command understood code
 	recieveNethelperErrorCode( &ecode, &edata ); 
 	if ( ecode != E_ERASING_MTDBLOCK )
@@ -328,7 +326,6 @@ void sendAndWriteImage( struct imagefile* image )
 		errorExit();
 	}
 
-//	printf("DEBUG: waiting for ERASED MTDBLOCK\n");
 	recieveNethelperErrorCode( &ecode, &edata );
 	// Handle the errors that might have come up during the erasing procedure
 	if ( ecode == E_COULD_NOT_OPEN_MTDBLOCK )
@@ -362,7 +359,6 @@ void sendAndWriteImage( struct imagefile* image )
 	}
 
 	// Get the size of the image to flash
-//	printf("DEBUG: seeking\n");
 
 	fseek( fp, 0, SEEK_END );
 	
@@ -396,7 +392,6 @@ void sendAndWriteImage( struct imagefile* image )
 	// Send the image to the box
 	while ( completed < size )
 	{
-//		printf("DEBUG: reading\n");
 		if ( ( readBytes = fread( buffer, 1, ((size-completed)>32*1024)?(32*1024):(size-completed), fp ) ) == 0 )
 		{
 			printf("\n");
@@ -404,7 +399,6 @@ void sendAndWriteImage( struct imagefile* image )
 			errorExit();
 		}
 
-//		printf("DEBUG: Sending data: %i\n", readBytes);
 		sendall( nethelperConnection, buffer, readBytes, 0 );
 
 		completed += readBytes;
@@ -974,7 +968,6 @@ int installNetHelper()
 
 void removeNetHelper()
 {
-
 	printf("Removing nethelper from the box.\n");
 	sendCommandToNethelper( "exit" );
 	close( nethelperConnection );
@@ -1165,8 +1158,6 @@ void recieveAndStoreImage( char* image, char* targetpath )
 		break;
 	}
 }
-
-
 
 void transferServer( struct in_addr* serverip, uint32_t port, char* out, int outlen )
 {
