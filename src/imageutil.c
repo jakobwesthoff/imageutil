@@ -156,8 +156,6 @@ int main( int argc, char** argv )
 		exit( EXIT_FAILURE );
 	}
 
-	printf("Everything done.\n");
-	
 	return EXIT_SUCCESS;
 }
 
@@ -182,6 +180,8 @@ void readImages( struct in_addr kathreinip, char* targetpath )
 	// Remove the nethelper and close the control connection
 	removeNetHelper();
 	closeControlConnection();
+
+	printf("Everything done.\n");
 }
 
 void writeImages( struct in_addr kathreinip, char* targetpath )
@@ -251,6 +251,7 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 	// Output flashing information and warning	
 	{		
 		int i;
+		char buffer[32];
 		
 		printf( "\rThe following images will be flashed to the shown mtdblocks:\n" );
 
@@ -259,34 +260,40 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 			printf( "File: %s -> mtdblock%s\n", imagelist[i].filename, imagelist[i].mtdblock );
 		}
 				
-		printf( "\n" );
-		printf( "\n\033[31;5;1mWARNING\033[39;49;0m -   The following process may damage your kathrein severly    - \033[31;5;1mWARNING\033[39;49;0m\n" );
-		printf( "\033[31;5;1mWARNING\033[39;49;0m - The flashing will start in 10 seconds ( Abort with CTRL-C ) - \033[31;5;1mWARNING\033[39;49;0m\n" );
+		printf( "\n\033[31;5;1mWARNING\033[39;49;0m -   The following process may damage your kathrein severly    - \033[31;5;1mWARNING\033[39;49;0m\n\n" );
+		printf( "Are you sure you want to start the flashing process [y/N] " );
 		fflush( stdout );
-		sleep(10);
-	}
-
-	{
-		int i;
-
-		// Open control connection and install the nethelper
-		openControlConnection( kathreinip, USERNAME, PASSWORD );
-		installNetHelper();	
-
-		for( i=0; i<imagelistlen; i++ )
+		fgets( buffer, 32, stdin );
+		if ( !strcasecmp( buffer, "y\n" ) || !strcasecmp( buffer, "yes\n" ) )
 		{
-			sendAndWriteImage( imagelist + i );
+			int i;
+
+			printf("\n");
+
+			// Open control connection and install the nethelper
+			openControlConnection( kathreinip, USERNAME, PASSWORD );
+			installNetHelper();	
+
+			for( i=0; i<imagelistlen; i++ )
+			{
+				sendAndWriteImage( imagelist + i );
+			}
+			
+			printf( "Trying to reboot the ufs.\nIf this fails please reboot manually by using the on/off switch on the back.\n" );
+
+			// Try to reboot the box
+			sendCommandToNethelper( "REBOOT" );
+			sleep(2);
+
+			// Close the control connection
+			closeControlConnection();
+
+			printf("Everything done.\n");
 		}
-		
-		printf( "Trying to reboot the ufs.\nIf this fails please reboot manually by using the on/off switch on the back.\n" );
-
-		// Try to reboot the box
-		sendCommandToNethelper( "REBOOT" );
-		sleep(2);
-
-		// Close the control connection
-		closeControlConnection();
-
+		else
+		{
+			printf( "\nThe flashing process has been aborted on your command.\n" );
+		}
 	}
 
 	// Cleanup
