@@ -1,5 +1,5 @@
 #define PROGRAM_TITLE "Kathrein UFS-910 Image Utillity"
-#define PROGRAM_VERSION "v. 0.8"
+#define PROGRAM_VERSION "v. 0.2"
 #define PROGRAM_COPYRIGHT "(c) Jakob Westhoff <jakob@westhoffswelt.de>"
 
 #define USERNAME "root"
