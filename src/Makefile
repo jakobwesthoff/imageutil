@@ -19,6 +19,7 @@ clean:
 	-rm kathi/nethelper >/dev/null 2>&1
 	-rm nethelper_resource.h >/dev/null 2>&1
 	-rm imageutil >/dev/null 2>&1
+	-rm imageutil-*.tar.gz >/dev/null 2>&1
 
 .PHONY: package
 package: imageutil
