@@ -294,6 +294,7 @@ ssize_t sendall( int s , const void * msg , size_t len , int flags )
 
 		completed += bytesSend;
 	}
+	return completed;
 }
 
 int sendErrorResponse( int sock, int code, char* data, int datalen )

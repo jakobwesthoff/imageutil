@@ -233,14 +233,14 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 			continue;
 		}
 		
-		imagelist[imagelistlen].filename = entry->d_name;
+		imagelist[imagelistlen].filename = strdup( entry->d_name );
 		imagelist[imagelistlen].pathname = pathname;
 		imagelist[imagelistlen++].mtdblock = mtdblock;
 
 		fclose(fp);
 	}
 
-	//closedir(dir);
+	closedir(dir);
 
 	if ( errno != 0 )
 	{
@@ -302,6 +302,7 @@ void writeImages( struct in_addr kathreinip, char* targetpath )
 		for( i=0; i<imagelistlen; i++ )
 		{
 			free( imagelist[i].pathname );
+			free( imagelist[i].filename );
 		}
 	}
 }
@@ -1349,6 +1350,7 @@ ssize_t sendall( int s , const void * msg , size_t len , int flags )
 
 		completed += bytesSend;
 	}
+	return completed;
 }
 
 void errorExit()
