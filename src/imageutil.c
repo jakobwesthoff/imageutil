@@ -27,6 +27,34 @@
 int controlConnection   = 0;
 int nethelperConnection = 0;
 
+#ifdef DEBUG
+FILE* debug;
+
+void debuglog( char* text )
+{
+	fwrite( text, 1, strlen(text), debug );
+	fwrite( "\n", 1, 1, debug );
+	fflush( debug );
+}
+
+void debuglogsize( char* data, int size )
+{
+	fwrite( data, 1, size, debug );
+	fwrite( "\n", 1, 1, debug );
+	fflush( debug );
+}
+
+#define DLOG(x) debuglog(x);
+#define DLOGS(x,y) debuglogsize(x,y);
+
+#else
+
+#define DLOG(x)
+#define DLOGS(x,y)
+
+#endif
+
+
 int main( int argc, char** argv ) 
 {
 	// Ip address
@@ -62,6 +90,16 @@ int main( int argc, char** argv )
 		printf( "     Example: ./imageutil s image_with_header.img image_without_header.img\n" );
 		exit( EXIT_FAILURE );
 	}
+
+	// Open the debug file
+	#ifdef DEBUG
+		if ( ( debug = fopen( "debug.log", "w" ) ) == 0 ) 
+		{
+			perror( "Could not open debug.log for writing" );
+			errorExit();
+		}
+	#endif
+
 	
 	// Validate parameters for reading/writing
 	if ( !strcasecmp( argv[1], "r" ) || !strcasecmp( argv[1], "w" ) )
@@ -674,6 +712,8 @@ void validatePath( char* path )
 void openControlConnection( struct in_addr ipaddr, char* username, char* password )
 {
 	struct sockaddr_in  kathrein;
+
+	DLOG("> openControlConnection")
 	
 	// Create our needed socket
 	if ( ( controlConnection = socket( AF_INET, SOCK_STREAM, 0 ) ) == -1 )
@@ -698,29 +738,36 @@ void openControlConnection( struct in_addr ipaddr, char* username, char* passwor
 	if ( waitForControlConnection( 2, "login:", "# " ) == 0 )
 	{
 		sendToControlConnection( USERNAME );
-		waitForControlConnection( 1, "Password:" );
-		// Send the password manually because it is not echoed back
-		sendall( controlConnection, PASSWORD, strlen(PASSWORD), 0 );
-		sendall( controlConnection, "\n", 1, 0 );		
-		if ( waitForControlConnection( 2, "Login incorrect", "# ") == 0 )
+		if ( waitForControlConnection( 2, "Password:", "# " ) == 0 ) 
 		{
-			// Login was incorrect try to connect without password
-			sendToControlConnection( USERNAME );
-			waitForControlConnection( 1, "Password:" );
+			// Send the password manually because it is not echoed back
+			DLOG("Sending pw")
+			sendall( controlConnection, PASSWORD, strlen(PASSWORD), 0 );
 			sendall( controlConnection, "\n", 1, 0 );		
-			waitForControlConnection( 1, "# " );
+			if ( waitForControlConnection( 2, "Login incorrect", "# ") == 0 )
+			{
+				DLOG("Login without pw")
+				// Login was incorrect try to connect without password
+				sendToControlConnection( USERNAME );
+				waitForControlConnection( 1, "Password:" );
+				sendall( controlConnection, "\n", 1, 0 );		
+				waitForControlConnection( 1, "# " );
+			}
 		}
 	}
 	
 	// We are logged in set a new console prompt for identification
 	sendToControlConnection( "PS1=\""COMMANDPROMPT"\"" );
 	waitForControlConnection( 1, COMMANDPROMPT );
+	DLOG("< openControlConnection")
 }
 
 void closeControlConnection()
 {
+	DLOG("> closeControlConnection")
 	sendToControlConnection( "exit" );
 	close( controlConnection );
+	DLOG("< closeControlConnection")
 }
 
 int waitForControlConnection( int waitnum, ... )
@@ -733,6 +780,8 @@ int waitForControlConnection( int waitnum, ... )
 	va_list va;
 	int i;
 
+	DLOG("> waitForControlConnection")
+
 	// Allocate 1024 bytes for our data buffer
 	data = (char*)malloc( datalen );
 	memset(data, 0, datalen);
@@ -741,6 +790,7 @@ int waitForControlConnection( int waitnum, ... )
 
 	while( ( lastRead = recv( controlConnection, buf, 1024, 0 ) ) != 0 ) 
 	{
+		DLOGS(buf, lastRead)
 		// Check if we need to get more space for the data
 		if ( bytesRead + lastRead > datalen ) 
 		{
@@ -760,11 +810,12 @@ int waitForControlConnection( int waitnum, ... )
 		va_start( va, waitnum );
 		for ( i = 0; i < waitnum; i++ )
 		{
-			char* waitfor = va_arg( va, char* );
+			char* waitfor = va_arg( va, char* );			
 			if ( strstr( data, waitfor ) != 0 ) 
 			{
 				// We found the string let's cleanup and go on
 				free( data );
+				DLOG("< waitForControlConnection")
 				return i;
 			}
 		}
@@ -774,6 +825,7 @@ int waitForControlConnection( int waitnum, ... )
 	// The connection terminated while we were waiting for a string
 	// This should not happen, therefore bail out
 	fprintf( stderr, "The control connection to the kathrein receiver terminated unexpectedly.\n" );
+	DLOG("< waitForControlConnection")
 	errorExit();
 }
 
@@ -782,6 +834,8 @@ void sendToControlConnection( char* data )
 	char* echobuf;
 	int recvBytes   = 0;
 	int neededBytes = 0;
+	DLOG("> sendToControlConnection")
+	DLOG(data)
 	echobuf = (char*)malloc( strlen(data) + 1 );
 
 	// Send the command followed by a newline
@@ -802,20 +856,26 @@ void sendToControlConnection( char* data )
 
 		neededBytes += recvBytes;
 	}
+	
 	// Free the allocated buffer
 	free( echobuf );
+	DLOG("< sendToControlConnection")
 }
 
 void sendCommandToNethelper( char* command )
 {
 	int cmdlen = strlen( command );
 
+	DLOG("> sendCommandToNethelper")
+	DLOG(command)
+
 	if ( sendall( nethelperConnection, command, cmdlen, 0 ) != cmdlen
 	|| ( sendall( nethelperConnection, "\n", 1, 0 ) != 1 ) )
 	{
 		fprintf( stderr, "Could not send command to the nethelper.\n" );
 		errorExit();
-	}
+	}	
+	DLOG("< sendCommandToNethelper")
 }
 
 void recieveNethelperErrorCode( int* errorCode, char** data )
